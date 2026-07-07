@@ -2,8 +2,9 @@
 /**
  * Crescent Staffing — Roster Sync Script
  *
- * Reads a CSV or XLSX roster export and pushes it to Firebase,
- * marking anyone no longer in the file as inactive.
+ * Reads a CSV or XLSX roster export and pushes it to the shared platform
+ * Supabase project (staffing_roster table), marking anyone no longer in
+ * the file as inactive.
  *
  * Usage:
  *   node sync-roster.js path/to/roster.csv
@@ -17,23 +18,20 @@
  *
  * Setup:
  *   npm install xlsx node-fetch
- *   Set FIREBASE_SECRET below (from Firebase Console → Project Settings → Service Accounts → Database secrets)
+ *   Set SUPABASE_SERVICE_KEY below (Supabase dashboard → Project Settings →
+ *   API → Project API keys → service_role). This bypasses RLS, which is
+ *   required since this script doesn't sign in as a platform user.
  */
 
 const XLSX = require('xlsx');
 const https = require('https');
-const path = require('path');
 const fs = require('fs');
 
 // ─── CONFIGURE THESE ──────────────────────────────────────────────────────────
-const FIREBASE_DB_URL = 'https://staffingtool-1ab4f-default-rtdb.firebaseio.com';
+const SUPABASE_URL = 'https://oavksqgwjqlbnyairljn.supabase.co';
 
-// Get this from: Firebase Console → Project Settings → Service Accounts → Database Secrets
-// Click "Show" next to your secret, copy it here.
-const FIREBASE_SECRET = process.env.FIREBASE_SECRET || 'YOUR_DATABASE_SECRET_HERE';
-
-// What subject/sender identifies the roster email attachment you download?
-// (Only used as a comment reminder — adjust to match your system's export filename)
+// Get this from: Supabase dashboard → Project Settings → API → service_role key
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || 'YOUR_SERVICE_ROLE_KEY_HERE';
 // ──────────────────────────────────────────────────────────────────────────────
 
 const filePath = process.argv[2];
@@ -48,18 +46,23 @@ if (!fs.existsSync(filePath)) {
     process.exit(1);
 }
 
-if (FIREBASE_SECRET === 'YOUR_DATABASE_SECRET_HERE') {
-    console.error('ERROR: Set your FIREBASE_SECRET in the script or via environment variable.');
-    console.error('  Find it at: Firebase Console → Project Settings → Service Accounts → Database Secrets');
+if (SUPABASE_SERVICE_KEY === 'YOUR_SERVICE_ROLE_KEY_HERE') {
+    console.error('ERROR: Set your SUPABASE_SERVICE_KEY in the script or via environment variable.');
+    console.error('  Find it at: Supabase dashboard → Project Settings → API → service_role key');
     process.exit(1);
 }
 
-// ─── Firebase REST helpers ────────────────────────────────────────────────────
+// ─── Supabase REST (PostgREST) helpers ────────────────────────────────────────
 
-function firebaseGet(path) {
+function supabaseGet(queryPath) {
     return new Promise((resolve, reject) => {
-        const url = `${FIREBASE_DB_URL}${path}.json?auth=${FIREBASE_SECRET}`;
-        https.get(url, (res) => {
+        const url = new URL(`${SUPABASE_URL}/rest/v1/${queryPath}`);
+        https.get(url, {
+            headers: {
+                apikey: SUPABASE_SERVICE_KEY,
+                Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
+            },
+        }, (res) => {
             let data = '';
             res.on('data', chunk => data += chunk);
             res.on('end', () => {
@@ -70,25 +73,28 @@ function firebaseGet(path) {
     });
 }
 
-function firebasePut(path, body) {
+function supabaseUpsert(table, body) {
     return new Promise((resolve, reject) => {
         const payload = JSON.stringify(body);
-        const url = new URL(`${FIREBASE_DB_URL}${path}.json?auth=${FIREBASE_SECRET}`);
+        const url = new URL(`${SUPABASE_URL}/rest/v1/${table}`);
         const options = {
             hostname: url.hostname,
             path: url.pathname + url.search,
-            method: 'PUT',
+            method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'Content-Length': Buffer.byteLength(payload),
+                apikey: SUPABASE_SERVICE_KEY,
+                Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
+                Prefer: 'resolution=merge-duplicates',
             },
         };
         const req = https.request(options, (res) => {
             let data = '';
             res.on('data', chunk => data += chunk);
             res.on('end', () => {
-                if (res.statusCode >= 200 && res.statusCode < 300) resolve(JSON.parse(data));
-                else reject(new Error(`Firebase PUT failed ${res.statusCode}: ${data}`));
+                if (res.statusCode >= 200 && res.statusCode < 300) resolve(data ? JSON.parse(data) : null);
+                else reject(new Error(`Supabase upsert failed ${res.statusCode}: ${data}`));
             });
         });
         req.on('error', reject);
@@ -159,12 +165,12 @@ async function main() {
     const fileIds = new Set(Object.keys(fileAssociates));
     console.log(`Parsed ${fileIds.size} associates from file (${skipped} rows skipped).`);
 
-    // Fetch existing roster from Firebase
-    console.log('Fetching current roster from Firebase...');
+    // Fetch existing roster from Supabase
+    console.log('Fetching current roster from Supabase...');
     let currentRoster = {};
     try {
-        const data = await firebaseGet('/roster/associates');
-        currentRoster = data || {};
+        const rows = await supabaseGet('staffing_roster?id=eq.current&select=associates');
+        currentRoster = (rows && rows[0] && rows[0].associates) || {};
     } catch (e) {
         console.warn('Warning: Could not fetch existing roster (will treat as empty):', e.message);
     }
@@ -191,12 +197,13 @@ async function main() {
 
     console.log(`Changes — New: ${newCount}, Updated: ${updatedCount}, Newly inactive: ${inactiveCount}`);
 
-    // Push to Firebase
+    // Push to Supabase
     const syncTime = new Date().toISOString();
-    console.log('Pushing to Firebase...');
-    await firebasePut('/roster', {
+    console.log('Pushing to Supabase...');
+    await supabaseUpsert('staffing_roster', {
+        id: 'current',
         associates: updatedRoster,
-        lastSync: syncTime,
+        last_sync: syncTime,
     });
 
     const activeCount = Object.values(updatedRoster).filter(a => a.isActive).length;

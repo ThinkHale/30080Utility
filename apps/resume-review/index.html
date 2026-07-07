@@ -1124,9 +1124,8 @@
     </form>
   </div>
 </div>
-<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
-<script src="../../shared/js/firebase-config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../shared/js/supabase-config.js"></script>
 <script src="../../shared/js/auth-guard.js"></script>
 <script src="../../shared/js/dash-link.js"></script>
 
@@ -1817,83 +1816,74 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs
 // ============================================================
 //  STATE
 // ============================================================
+const PLATFORM_FN_BASE = `${PLATFORM_SUPABASE_URL}/functions/v1`;
 let config = {
-  url: 'https://resume-review-fn-bydkf6hrgvaadwcj.centralus-01.azurewebsites.net/api/analyze',
-  enhanceUrl: 'https://resume-review-fn-bydkf6hrgvaadwcj.centralus-01.azurewebsites.net/api/enhance',
-  generateUrl: 'https://resume-review-fn-bydkf6hrgvaadwcj.centralus-01.azurewebsites.net/api/generate',
-  emailUrl: 'https://resume-review-fn-bydkf6hrgvaadwcj.centralus-01.azurewebsites.net/api/email',
-  interviewUrl: 'https://resume-review-fn-bydkf6hrgvaadwcj.centralus-01.azurewebsites.net/api/interview',
-  key: ''
+  url: `${PLATFORM_FN_BASE}/resume-analyze`,
+  enhanceUrl: `${PLATFORM_FN_BASE}/resume-enhance`,
+  generateUrl: `${PLATFORM_FN_BASE}/resume-generate`,
+  emailUrl: `${PLATFORM_FN_BASE}/resume-email`,
+  interviewUrl: `${PLATFORM_FN_BASE}/resume-interview`,
 };
 
-// ============================================================
-//  AZURE TABLE STORAGE
-// ============================================================
-const STORAGE = {
-  account: 'resumereviewstorageeb',
-  sas: 'sv=2024-11-04&ss=bfqt&srt=sco&sp=rwdlacupiytfx&se=2029-03-18T04:24:58Z' +
-       '&st=2026-03-17T20:09:58Z&spr=https' +
-       '&sig=uCA0xyX58r518bGqCFhRkT4AAIDpn8sLZsa1Ee78nt8%3D',
-  base() { return `https://${this.account}.table.core.windows.net`; },
-};
+// Every Edge Function requires the signed-in platform user's own session
+// token (see shared/js/auth-guard.js), not a shared function key.
+async function authHeader() {
+  const { data: { session } } = await window.platformSupabase.auth.getSession();
+  return { Authorization: `Bearer ${session?.access_token || ""}` };
+}
 
+// ============================================================
+//  STORAGE (Supabase table `resume_review_records`, replacing the old
+//  Azure Table Storage account). Keeps the exact same insert/query/remove
+//  interface — with the same PartitionKey/RowKey entity shape — that every
+//  call site below already expects, so nothing past this block needed to
+//  change for the migration.
+// ============================================================
 const AzureTable = {
-  url(table, suffix = '') {
-    return `${STORAGE.base()}/${table}${suffix}?${STORAGE.sas}`;
-  },
-
-  async createTable(name) {
-    try {
-      await fetch(`${STORAGE.base()}/Tables?${STORAGE.sas}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-        body: JSON.stringify({ TableName: name }),
-      });
-    } catch(e) { /* ignore — table may already exist */ }
+  async createTable(_name) {
+    // No-op: resume_review_records already exists for every `kind`.
   },
 
   async insert(table, entity) {
-    const res = await fetch(this.url(table), {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json;odata=nometadata',
-      },
-      body: JSON.stringify(entity),
+    const { PartitionKey, RowKey, ...rest } = entity;
+    const { error } = await window.platformSupabase.from('resume_review_records').insert({
+      kind: table,
+      partition_key: PartitionKey,
+      row_key: RowKey,
+      data: rest,
     });
-    if (!res.ok) throw new Error(`Storage insert failed: ${res.status}`);
-    return res.json();
+    if (error) throw new Error(`Storage insert failed: ${error.message}`);
+    return entity;
   },
 
   async query(table, filter = '') {
-    let url = this.url(table);
-    if (filter) url += `&$filter=${encodeURIComponent(filter)}`;
-    const res = await fetch(url, {
-      headers: { 'Accept': 'application/json;odata=nometadata' },
-    });
-    if (!res.ok) throw new Error(`Storage query failed: ${res.status}`);
-    const data = await res.json();
-    return (data.value || []).reverse(); // newest first
+    // Original Azure filter strings look like "PartitionKey eq 'jobs'" or
+    // "PartitionKey eq 'jobs' and RowKey eq '<rowKey>'". PartitionKey is
+    // always fixed per `table` here, so only RowKey needs translating.
+    let q = window.platformSupabase.from('resume_review_records').select('*').eq('kind', table);
+    const rowKeyMatch = filter.match(/RowKey eq '([^']+)'/);
+    if (rowKeyMatch) q = q.eq('row_key', rowKeyMatch[1]);
+    const { data, error } = await q.order('created_at', { ascending: false });
+    if (error) throw new Error(`Storage query failed: ${error.message}`);
+    return (data || []).map(row => ({
+      PartitionKey: row.partition_key,
+      RowKey: row.row_key,
+      ...row.data,
+    }));
   },
 
-  async remove(table, partitionKey, rowKey) {
-    const suffix = `(PartitionKey='${encodeURIComponent(partitionKey)}',RowKey='${encodeURIComponent(rowKey)}')`;
-    const res = await fetch(`${STORAGE.base()}/${table}${suffix}?${STORAGE.sas}`, {
-      method: 'DELETE',
-      headers: { 'If-Match': '*' },
-    });
-    if (!res.ok && res.status !== 404) throw new Error(`Storage delete failed: ${res.status}`);
+  async remove(table, _partitionKey, rowKey) {
+    const { error } = await window.platformSupabase
+      .from('resume_review_records')
+      .delete()
+      .eq('kind', table)
+      .eq('row_key', rowKey);
+    if (error) throw new Error(`Storage delete failed: ${error.message}`);
   },
 };
 
 async function initStorage() {
-  await Promise.all([
-    AzureTable.createTable('SavedJobs'),
-    AzureTable.createTable('Results'),
-    AzureTable.createTable('EnhanceHistory'),
-    AzureTable.createTable('GenerateHistory'),
-    AzureTable.createTable('InterviewHistory'),
-  ]);
+  await window.platformAuthReady; // avoid querying before a session exists
   loadSavedJobs();
   loadSavedJobsEnhance();
   loadSavedJobsGenerate();
@@ -2292,7 +2282,7 @@ async function callProxy(jobDescription, positionNotes, resumeText, candidateNam
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-functions-key': config.key,
+        ...(await authHeader()),
       },
       body: JSON.stringify({ jobDescription, positionNotes, resumeText, candidateName }),
     });
@@ -2655,7 +2645,7 @@ async function callEnhanceProxy(jobDescription, positionNotes, interviewNotes, r
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-functions-key': config.key,
+        ...(await authHeader()),
       },
       body: JSON.stringify({ jobDescription, positionNotes, interviewNotes, resumeText, candidateName }),
     });
@@ -2879,7 +2869,7 @@ async function callGenerateProxy(payload) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-functions-key': config.key,
+        ...(await authHeader()),
       },
       body: JSON.stringify(payload),
     });
@@ -3624,7 +3614,7 @@ async function callInterviewProxy(payload) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-functions-key': config.key,
+        ...(await authHeader()),
       },
       body: JSON.stringify(payload),
     });
@@ -3880,7 +3870,7 @@ async function callEmailProxy(context) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-functions-key': config.key,
+        ...(await authHeader()),
       },
       body: JSON.stringify(context),
     });

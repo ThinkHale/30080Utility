@@ -51,8 +51,8 @@
     const DEFAULT_INDUSTRIES = [{ id: "general", label: "General" }];
 
     // ── Supabase ───────────────────────────────────────────────────────────
-    const SUPABASE_URL      = "https://rpfoqfjtaijduflbgvtr.supabase.co";
-    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJwZm9xZmp0YWlqZHVmbGJndnRyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUzMzA1OTcsImV4cCI6MjA5MDkwNjU5N30.56syj7vnm8HpMF1hdk3ybEg6TDwJmhrZ9G2G3TUa8zE";
+    const SUPABASE_URL      = "https://oavksqgwjqlbnyairljn.supabase.co";
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9hdmtzcWd3anFsYm55YWlybGpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM0NDMwNzksImV4cCI6MjA5OTAxOTA3OX0.ku5qwEmISqCEJFTx9U10q-84Ip6YaOmc7jVu9BXxur8";
     const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     // ── Local storage helpers (settings only) ─────────────────────────────
@@ -63,11 +63,15 @@
     const save = (key, val) => localStorage.setItem(key, JSON.stringify(val));
 
     // ── Claude API proxy ───────────────────────────────────────────────────
-    const WORKER_URL = "https://employbridge-hotlist.plx30080.workers.dev";
+    const WORKER_URL = `${SUPABASE_URL}/functions/v1/hotlist-generate`;
     async function generateBullets(inputText) {
+      const { data: { session } } = await db.auth.getSession();
       const res = await fetch(WORKER_URL, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token || SUPABASE_ANON_KEY}`,
+        },
         body: JSON.stringify({ inputText }),
       });
       if (!res.ok) {

@@ -8,10 +8,6 @@
     <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone@7.26.10/babel.min.js"></script>
 
-    <!-- Firebase SDK -->
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
-
     <!-- SheetJS for XLSX export -->
     <!-- xlsx-js-style: SheetJS-compatible read/write + cell styling (borders/fills/fonts) -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
@@ -1285,8 +1281,8 @@
     </form>
   </div>
 </div>
-<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
-<script src="../../shared/js/firebase-config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../shared/js/supabase-config.js"></script>
 <script src="../../shared/js/auth-guard.js"></script>
 <script src="../../shared/js/dash-link.js"></script>
 
@@ -1295,35 +1291,172 @@
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
 
-        // Firebase configuration
-        const FIREBASE_CONFIG = {
-            apiKey: "AIzaSyD2ySRicFt2-Zd2JRaW0ZHHb97gzwgcdWg",
-            authDomain: "staffingtool-1ab4f.firebaseapp.com",
-            databaseURL: "https://staffingtool-1ab4f-default-rtdb.firebaseio.com",
-            projectId: "staffingtool-1ab4f",
-            storageBucket: "staffingtool-1ab4f.firebasestorage.app",
-            messagingSenderId: "956290053379",
-            appId: "1:956290053379:web:2611b6db69ef2c9b2de536",
-            measurementId: "G-HFR8KR0HMQ"
-        };
+        // Data backend: shared platform Supabase project (replaces the old
+        // per-app Firebase Realtime Database). `db` below re-implements just
+        // the slice of the Firebase Realtime DB API this file already calls
+        // (ref().once('value')/.set()/.update()/.remove()/.on('value')), so
+        // none of the ~25 call sites elsewhere in this file needed to
+        // change — only this init block and the shim itself.
+        //
+        // Path -> table mapping:
+        //   roster, roster/associates, roster/lastSync  -> staffing_roster (id='current')
+        //   settings/coreAssociates                      -> staffing_settings (key='coreAssociates')
+        //   statusRaw, statusMeta                        -> badge_status_raw (id='current')
+        //   statusList                                   -> legacy fallback, always empty now
+        //   staffing, staffing/{date}_{shift}             -> staffing_sheets (id = docId)
+        const isFirebaseConfigured = true;
 
-        let db = null;
-        let isFirebaseConfigured = false;
-
-        // Check if Firebase is configured
-        try {
-            const configuredKeys = Object.values(FIREBASE_CONFIG).filter(v => !v.startsWith('YOUR_'));
-            if (configuredKeys.length === Object.keys(FIREBASE_CONFIG).length) {
-                firebase.initializeApp(FIREBASE_CONFIG);
-                db = firebase.database();  // Using Realtime Database instead of Firestore
-                isFirebaseConfigured = true;
-                console.log('Firebase Realtime Database initialized successfully');
-            } else {
-                console.warn('Firebase not configured. Using localStorage only.');
-            }
-        } catch (error) {
-            console.error('Firebase initialization error:', error);
+        function rowToStaffingData(row) {
+            return {
+                date: row.date, shift: row.shift, lines: row.lines, waitlist: row.waitlist,
+                indirect: row.indirect, locked: row.locked, lastUpdated: row.last_updated,
+            };
         }
+
+        async function dbReadPath(path) {
+            const supa = window.platformSupabase;
+            if (path === 'roster') {
+                const { data } = await supa.from('staffing_roster').select('associates,last_sync').eq('id', 'current').maybeSingle();
+                return data ? { associates: data.associates || {}, lastSync: data.last_sync || null } : null;
+            }
+            if (path === 'roster/associates') {
+                const { data } = await supa.from('staffing_roster').select('associates').eq('id', 'current').maybeSingle();
+                return data ? (data.associates || {}) : null;
+            }
+            if (path === 'roster/lastSync') {
+                const { data } = await supa.from('staffing_roster').select('last_sync').eq('id', 'current').maybeSingle();
+                return data ? data.last_sync : null;
+            }
+            if (path === 'settings/coreAssociates') {
+                const { data } = await supa.from('staffing_settings').select('data').eq('key', 'coreAssociates').maybeSingle();
+                return data ? data.data : null;
+            }
+            if (path === 'statusRaw') {
+                const { data } = await supa.from('badge_status_raw').select('submissions,corrective').eq('id', 'current').maybeSingle();
+                return data ? { submissions: data.submissions || [], corrective: data.corrective || [] } : null;
+            }
+            if (path === 'statusMeta') {
+                const { data } = await supa.from('badge_status_raw').select('updated_at,source').eq('id', 'current').maybeSingle();
+                return data ? { updatedAt: data.updated_at, source: data.source } : null;
+            }
+            if (path === 'statusList') return null; // legacy fallback, no longer written
+            if (path === 'staffing') {
+                const { data } = await supa.from('staffing_sheets').select('*');
+                if (!data || data.length === 0) return null;
+                const obj = {};
+                data.forEach(row => { obj[row.id] = rowToStaffingData(row); });
+                return obj;
+            }
+            if (path.startsWith('staffing/')) {
+                const id = path.slice('staffing/'.length);
+                const { data } = await supa.from('staffing_sheets').select('*').eq('id', id).maybeSingle();
+                return data ? rowToStaffingData(data) : null;
+            }
+            throw new Error(`Unsupported path: ${path}`);
+        }
+
+        async function dbWritePath(path, value) {
+            const supa = window.platformSupabase;
+            if (path === 'roster') {
+                await supa.from('staffing_roster').upsert({ id: 'current', associates: value.associates, last_sync: value.lastSync });
+                return;
+            }
+            if (path === 'settings/coreAssociates') {
+                await supa.from('staffing_settings').upsert({ key: 'coreAssociates', data: value, updated_at: new Date().toISOString() });
+                return;
+            }
+            if (path === 'statusRaw') {
+                await supa.from('badge_status_raw').upsert({ id: 'current', submissions: value.submissions || [], corrective: value.corrective || [] });
+                return;
+            }
+            if (path === 'statusMeta') {
+                await supa.from('badge_status_raw').upsert({ id: 'current', updated_at: value.updatedAt, source: value.source });
+                return;
+            }
+            if (path.startsWith('staffing/')) {
+                const id = path.slice('staffing/'.length);
+                await supa.from('staffing_sheets').upsert({
+                    id, date: value.date, shift: value.shift, lines: value.lines,
+                    waitlist: value.waitlist, indirect: value.indirect, locked: value.locked,
+                    last_updated: value.lastUpdated,
+                });
+                return;
+            }
+            throw new Error(`Unsupported set() path: ${path}`);
+        }
+
+        async function dbRemovePath(path) {
+            const supa = window.platformSupabase;
+            if (path.startsWith('staffing/')) {
+                const id = path.slice('staffing/'.length);
+                await supa.from('staffing_sheets').delete().eq('id', id);
+                return;
+            }
+            throw new Error(`Unsupported remove() path: ${path}`);
+        }
+
+        // Only ever used for `roster/associates/{employeeId}/{field}` patches.
+        async function dbApplyRootPatch(patch) {
+            const supa = window.platformSupabase;
+            const { data } = await supa.from('staffing_roster').select('associates').eq('id', 'current').maybeSingle();
+            const associates = { ...(data ? data.associates : {}) };
+            Object.entries(patch).forEach(([path, val]) => {
+                const parts = path.split('/'); // roster / associates / {id} / {field}
+                if (parts[0] === 'roster' && parts[1] === 'associates') {
+                    const empId = parts[2], field = parts[3];
+                    associates[empId] = { ...(associates[empId] || {}), [field]: val };
+                }
+            });
+            await supa.from('staffing_roster').upsert({ id: 'current', associates });
+        }
+
+        function dbSubscribePath(path, cb) {
+            const supa = window.platformSupabase;
+            const table = 'badge_status_raw';
+            const shape = (row) => path === 'statusRaw'
+                ? { submissions: row.submissions || [], corrective: row.corrective || [] }
+                : { updatedAt: row.updated_at, source: row.source };
+            if (path !== 'statusRaw' && path !== 'statusMeta') return () => {};
+            const channel = supa.channel(`badge_status_raw_${path}`)
+                .on('postgres_changes', { event: '*', schema: 'public', table, filter: 'id=eq.current' }, (payload) => {
+                    if (payload.new) cb(shape(payload.new));
+                })
+                .subscribe();
+            return () => supa.removeChannel(channel);
+        }
+
+        function dbSnapshot(val) {
+            return { exists: () => val !== null && val !== undefined, val: () => val };
+        }
+
+        const db = {
+            ref(path) {
+                let unsubscribe = null;
+                return {
+                    async once(_eventType) {
+                        return dbSnapshot(await dbReadPath(path));
+                    },
+                    async set(value) {
+                        await dbWritePath(path, value);
+                    },
+                    async update(patch) {
+                        if (path === '/') return dbApplyRootPatch(patch);
+                        throw new Error(`update() on path "${path}" not supported`);
+                    },
+                    async remove() {
+                        await dbRemovePath(path);
+                    },
+                    on(eventType, callback) {
+                        if (eventType !== 'value') return;
+                        dbReadPath(path).then((val) => callback(dbSnapshot(val)));
+                        unsubscribe = dbSubscribePath(path, (val) => callback(dbSnapshot(val)));
+                    },
+                    off() {
+                        if (unsubscribe) unsubscribe();
+                    },
+                };
+            },
+        };
 
         // Storage utilities
         const storage = {
@@ -1730,6 +1863,7 @@
             // Load roster from Firebase / localStorage
             useEffect(() => {
                 const loadRoster = async () => {
+                    await window.platformAuthReady; // avoid querying before a session exists
                     if (isFirebaseConfigured && db) {
                         try {
                             const snap = await db.ref('roster/associates').once('value');
@@ -1760,6 +1894,7 @@
             // Load core associates from Firebase and localStorage
             useEffect(() => {
                 const loadCoreAssociates = async () => {
+                    await window.platformAuthReady; // avoid querying before a session exists
                     // Try Firebase first
                     if (isFirebaseConfigured && db) {
                         try {
@@ -1819,6 +1954,7 @@
                     storage.save('statusMeta', effectiveMeta);
                 };
                 const loadStatus = async () => {
+                    await window.platformAuthReady; // avoid querying before a session exists
                     if (isFirebaseConfigured && db) {
                         try {
                             const [rawSnap, metaSnap] = await Promise.all([
@@ -1873,6 +2009,7 @@
             // Load saved staffing reports once to build the "last lead worked for" index.
             useEffect(() => {
                 const loadHistory = async () => {
+                    await window.platformAuthReady; // avoid querying before a session exists
                     const reportsList = [];
                     const seen = new Set();
                     if (isFirebaseConfigured && db) {
@@ -4653,6 +4790,7 @@
             }, []);
 
             const loadReports = async () => {
+                await window.platformAuthReady; // avoid querying before a session exists
                 setLoading(true);
                 const reportsList = [];
                 const firebaseReportIds = new Set();
@@ -5822,6 +5960,7 @@
             }, []);
 
             const loadAllReports = async () => {
+                await window.platformAuthReady; // avoid querying before a session exists
                 setLoading(true);
                 const reportsList = [];
                 const seenIds = new Set();
@@ -6136,11 +6275,14 @@
             };
 
             useEffect(() => {
-                if (isFirebaseConfigured && db) {
-                    db.ref('roster/lastSync').once('value').then(snap => {
-                        if (snap.exists()) setLastSync(snap.val());
-                    }).catch(() => {});
-                }
+                (async () => {
+                    await window.platformAuthReady; // avoid querying before a session exists
+                    if (isFirebaseConfigured && db) {
+                        db.ref('roster/lastSync').once('value').then(snap => {
+                            if (snap.exists()) setLastSync(snap.val());
+                        }).catch(() => {});
+                    }
+                })();
                 const saved = storage.load('rosterLastSync', null);
                 if (saved && !lastSync) setLastSync(saved);
             }, []);

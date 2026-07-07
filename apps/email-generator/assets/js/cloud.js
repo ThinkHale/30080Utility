@@ -1,101 +1,70 @@
-// Optional cloud sync via Firebase (Auth + Firestore). If firebase-config.js
-// still has placeholder values, or the Firebase SDK failed to load, cloud
-// sync stays disabled and the app behaves exactly as it did with
-// localStorage only — this file changes nothing in that case.
+// Cloud sync via the shared platform Supabase project (see
+// shared/js/auth-guard.js, loaded before this file). Sign-in is mandatory
+// platform-wide now, so unlike the old optional Firebase version this
+// always syncs once a session exists — storage.js's public API
+// (loadTemplates/saveTemplates/loadSettings/saveSettings) is unchanged, so
+// only this file and the cloud-status widget needed to change.
 //
-// When enabled, each signed-in user's templates/settings live under
-// users/{uid}/data/{templates,settings} in Firestore. storage.js treats
-// localStorage as an offline cache: it reads/writes local storage
-// immediately, and mirrors saves up to Firestore when signed in. On sign-in,
-// cloud data (if any) overwrites the local cache before the page renders.
-const CLOUD_ENABLED = typeof firebase !== 'undefined'
-  && typeof firebaseConfig !== 'undefined'
-  && !!firebaseConfig.apiKey
-  && !firebaseConfig.apiKey.startsWith('YOUR_');
-
+// Each signed-in user's templates/settings live in the shared
+// email_templates / email_settings tables (one row per user, primary key
+// = auth.uid()). storage.js treats localStorage as an offline cache: it
+// reads/writes local storage immediately, and mirrors saves up to
+// Supabase when signed in. On sign-in, cloud data (if any) overwrites the
+// local cache before the page renders.
 let cloudUser = null;
-let cloudAuth = null;
-let cloudDb = null;
 
 let resolveCloudReady;
-const cloudReady = new Promise((resolve) => { resolveCloudReady = resolve; });
-
-function cloudDocRef(kind) {
-  return cloudDb.collection('users').doc(cloudUser.uid).collection('data').doc(kind);
-}
+const cloudReady = new Promise((resolve) => {
+  resolveCloudReady = resolve;
+});
 
 async function cloudLoadTemplates() {
   if (!cloudUser) return null;
-  const snap = await cloudDocRef('templates').get();
-  return snap.exists ? (snap.data().list || []) : null;
+  const { data, error } = await window.platformSupabase
+    .from('email_templates')
+    .select('list')
+    .eq('owner', cloudUser.id)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? data.list : null;
 }
 
 async function cloudSaveTemplates(templates) {
   if (!cloudUser) return;
-  await cloudDocRef('templates').set({
-    list: templates,
-    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
-  });
+  const { error } = await window.platformSupabase
+    .from('email_templates')
+    .upsert({ owner: cloudUser.id, list: templates, updated_at: new Date().toISOString() });
+  if (error) throw error;
 }
 
 async function cloudLoadSettings() {
   if (!cloudUser) return null;
-  const snap = await cloudDocRef('settings').get();
-  return snap.exists ? snap.data() : null;
+  const { data, error } = await window.platformSupabase
+    .from('email_settings')
+    .select('data')
+    .eq('owner', cloudUser.id)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? data.data : null;
 }
 
 async function cloudSaveSettings(settings) {
   if (!cloudUser) return;
-  await cloudDocRef('settings').set({
-    ...settings,
-    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
-  });
-}
-
-async function signInWithGoogle() {
-  try {
-    await cloudAuth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
-  } catch (e) {
-    showToast('Sign-in failed: ' + e.message, true);
-  }
-}
-
-async function signOutOfCloud() {
-  try {
-    await cloudAuth.signOut();
-  } catch (e) {
-    showToast('Sign-out failed: ' + e.message, true);
-  }
+  const { error } = await window.platformSupabase
+    .from('email_settings')
+    .upsert({ owner: cloudUser.id, data: settings, updated_at: new Date().toISOString() });
+  if (error) throw error;
 }
 
 function renderCloudWidget() {
   const textEl = document.getElementById('cloudStatusText');
-  const signInBtn = document.getElementById('cloudSignInBtn');
-  const signOutBtn = document.getElementById('cloudSignOutBtn');
   if (!textEl) return; // widget not present on this page
-
-  if (!CLOUD_ENABLED) {
-    textEl.textContent = 'Local only (Firebase not configured)';
-    signInBtn.style.display = 'none';
-    signOutBtn.style.display = 'none';
-    return;
-  }
-  if (cloudUser) {
-    textEl.textContent = `Synced as ${cloudUser.displayName || cloudUser.email}`;
-    signInBtn.style.display = 'none';
-    signOutBtn.style.display = '';
-  } else {
-    textEl.textContent = 'Not signed in — changes stay on this device';
-    signInBtn.style.display = '';
-    signOutBtn.style.display = 'none';
-  }
+  textEl.textContent = cloudUser ? `Synced as ${cloudUser.email}` : 'Signed in';
 }
 
 function bindCloudWidget() {
-  const signInBtn = document.getElementById('cloudSignInBtn');
   const signOutBtn = document.getElementById('cloudSignOutBtn');
-  if (signInBtn) signInBtn.addEventListener('click', signInWithGoogle);
-  if (signOutBtn) signOutBtn.addEventListener('click', signOutOfCloud);
+  if (signOutBtn) signOutBtn.addEventListener('click', () => window.platformAuth.signOut());
   renderCloudWidget();
 }
 
@@ -106,7 +75,7 @@ async function pullCloudIntoLocalCache() {
       saveLocalTemplates(cloudTemplates);
     } else {
       // First sign-in with nothing in the cloud yet: push up whatever is
-      // already cached locally so this device becomes the seed.
+      // already cached locally so this account becomes the seed.
       await cloudSaveTemplates(await loadLocalTemplates());
     }
     if (cloudSettings) {
@@ -120,30 +89,12 @@ async function pullCloudIntoLocalCache() {
   }
 }
 
-function initCloud() {
-  if (!CLOUD_ENABLED) {
-    resolveCloudReady();
-    return;
-  }
-
-  firebase.initializeApp(firebaseConfig);
-  cloudAuth = firebase.auth();
-  cloudDb = firebase.firestore();
-
-  let firstAuthCheck = true;
-  cloudAuth.onAuthStateChanged(async (user) => {
-    cloudUser = user;
-    if (user) await pullCloudIntoLocalCache();
-    renderCloudWidget();
-    if (firstAuthCheck) {
-      firstAuthCheck = false;
-      resolveCloudReady();
-    } else {
-      // Auth state changed after the page already rendered (sign in/out) —
-      // reload so every page module picks up the refreshed local cache.
-      location.reload();
-    }
-  });
+async function initCloud() {
+  const session = await window.platformAuthReady;
+  cloudUser = session ? session.user : null;
+  if (cloudUser) await pullCloudIntoLocalCache();
+  renderCloudWidget();
+  resolveCloudReady();
 }
 
 document.addEventListener('DOMContentLoaded', () => {

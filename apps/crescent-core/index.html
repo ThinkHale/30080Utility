@@ -22,11 +22,7 @@
     </script>
     <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    
-    <!-- Firebase SDKs -->
-    <script src="https://www.gstatic.com/firebasejs/11.8.1/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/11.8.1/firebase-database-compat.js"></script>
-    
+
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         .highlight-orange {
@@ -62,8 +58,8 @@
     </form>
   </div>
 </div>
-<script src="https://www.gstatic.com/firebasejs/11.8.1/firebase-auth-compat.js"></script>
-<script src="../../shared/js/firebase-config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../../shared/js/supabase-config.js"></script>
 <script src="../../shared/js/auth-guard.js"></script>
 <script src="../../shared/js/dash-link.js"></script>
 
@@ -498,126 +494,107 @@
             const [syncStatus, setSyncStatus] = useState('Disconnected');
             const hasAutoSelectedWeek = React.useRef(false);
 
-            // Pre-configured Firebase settings
+            // Data backend: shared platform Supabase project (replaces the old
+            // per-app Firebase Realtime Database). `database` below
+            // re-implements just the slice of the Firebase Realtime DB API
+            // this file already calls (ref(path).on('value')/.once('value')/
+            // .set()/.off()) against the `hours_weeks` table (one row per
+            // week, primary key `week_id`), so the effects below that consume
+            // `database` didn't need to change.
             useEffect(() => {
-                console.log('🔥 Initializing Firebase...');
-                console.log('Firebase object available:', typeof firebase !== 'undefined');
-
-                const config = {
-                    apiKey: "AIzaSyC2nzjfwl8J31TxGm8XMfmIOaUOpgFy1W8",
-                    authDomain: "hours-reporting-eaecc.firebaseapp.com",
-                    databaseURL: "https://hours-reporting-eaecc-default-rtdb.firebaseio.com",
-                    projectId: "hours-reporting-eaecc",
-                    storageBucket: "hours-reporting-eaecc.firebasestorage.app",
-                    messagingSenderId: "404886435461",
-                    appId: "1:404886435461:web:a0568f745f9b15a6875bec",
-                    measurementId: "G-S8XX0K6PCE"
-                };
-
-                // Set a timeout in case Firebase never connects
                 const connectionTimeout = setTimeout(() => {
-                    console.error('⏱️ Firebase connection timeout - stopping loading state');
                     setLoading(false);
                     setSyncStatus('Connection Timeout');
-                    alert('Firebase connection is taking too long. Please check your internet connection and refresh the page.');
-                }, 10000); // 10 second timeout
+                    alert('Supabase connection is taking too long. Please check your internet connection and refresh the page.');
+                }, 10000);
 
-                initializeFirebase(config, connectionTimeout);
+                window.platformAuthReady.then(() => {
+                    setDatabase(makeHoursWeeksDb());
+                    loadWeeksList(connectionTimeout);
+                });
             }, []);
 
-            const initializeFirebase = (config, timeoutId) => {
-                try {
-                    console.log('🔧 Attempting to initialize Firebase app...');
+            function makeHoursWeeksDb() {
+                const supa = window.platformSupabase;
+                return {
+                    ref(path) {
+                        let channel = null;
+                        return {
+                            async once(_eventType) {
+                                if (path === 'weeks') {
+                                    const { data } = await supa.from('hours_weeks').select('week_id');
+                                    const val = {};
+                                    (data || []).forEach(r => { val[r.week_id] = true; });
+                                    return { exists: () => data && data.length > 0, val: () => val };
+                                }
+                                const weekId = path.replace(/^weeks\//, '');
+                                const { data } = await supa.from('hours_weeks').select('data').eq('week_id', weekId).maybeSingle();
+                                return { exists: () => !!data, val: () => data ? data.data : null };
+                            },
+                            async set(value) {
+                                const weekId = path.replace(/^weeks\//, '');
+                                await supa.from('hours_weeks').upsert({ week_id: weekId, data: value, updated_at: new Date().toISOString() });
+                            },
+                            on(eventType, callback) {
+                                if (eventType !== 'value') return;
+                                if (path === 'weeks') {
+                                    supa.from('hours_weeks').select('week_id').then(({ data }) => {
+                                        const val = {};
+                                        (data || []).forEach(r => { val[r.week_id] = true; });
+                                        callback({ exists: () => data && data.length > 0, val: () => val });
+                                    });
+                                    channel = supa.channel('hours_weeks_list')
+                                        .on('postgres_changes', { event: '*', schema: 'public', table: 'hours_weeks' }, async () => {
+                                            const { data } = await supa.from('hours_weeks').select('week_id');
+                                            const val = {};
+                                            (data || []).forEach(r => { val[r.week_id] = true; });
+                                            callback({ exists: () => data && data.length > 0, val: () => val });
+                                        })
+                                        .subscribe();
+                                    return;
+                                }
+                                const weekId = path.replace(/^weeks\//, '');
+                                supa.from('hours_weeks').select('data').eq('week_id', weekId).maybeSingle().then(({ data }) => {
+                                    callback({ exists: () => !!data, val: () => data ? data.data : null });
+                                });
+                                channel = supa.channel(`hours_weeks_${weekId}`)
+                                    .on('postgres_changes', { event: '*', schema: 'public', table: 'hours_weeks', filter: `week_id=eq.${weekId}` }, (payload) => {
+                                        const row = payload.new;
+                                        callback({ exists: () => !!row, val: () => row ? row.data : null });
+                                    })
+                                    .subscribe();
+                            },
+                            off() {
+                                if (channel) supa.removeChannel(channel);
+                            },
+                        };
+                    },
+                };
+            }
 
-                    if (typeof firebase === 'undefined') {
-                        throw new Error('Firebase SDK not loaded. Please check your internet connection.');
+            const loadWeeksList = (timeoutId) => {
+                const db = makeHoursWeeksDb();
+                const weeksRef = db.ref('weeks');
+
+                weeksRef.on('value', (snapshot) => {
+                    clearTimeout(timeoutId);
+
+                    const weeksData = snapshot.val();
+                    if (weeksData) {
+                        const weeksList = Object.keys(weeksData).sort().reverse(); // Most recent first
+                        setAvailableWeeks(weeksList);
+
+                        // Auto-select most recent week only once on first load
+                        if (!hasAutoSelectedWeek.current && weeksList.length > 0) {
+                            hasAutoSelectedWeek.current = true;
+                            setSelectedWeek(weeksList[0]);
+                        }
                     }
 
-                    if (!firebase.apps.length) {
-                        firebase.initializeApp(config);
-                        console.log('✅ Firebase app initialized successfully');
-                    } else {
-                        console.log('ℹ️ Firebase app already initialized');
-                    }
-
-                    const db = firebase.database();
-                    console.log('✅ Firebase database reference created');
-
-                    setDatabase(db);
-                    setFirebaseConfig(config);
-                    setFirebaseInitialized(true);
-
-                    // Load data from Firebase
-                    loadFromFirebase(db, timeoutId);
-                } catch (error) {
-                    console.error('❌ Firebase initialization error:', error);
-                    console.error('Error details:', error.message, error.stack);
-                    clearTimeout(timeoutId);
-                    alert('Error connecting to Firebase: ' + error.message + '\n\nPlease check your internet connection and refresh the page.');
-                    setShowConfig(true);
                     setLoading(false);
-                    setSyncStatus('Error');
-                }
-            };
+                });
 
-            const loadFromFirebase = (db, timeoutId) => {
-                try {
-                    console.log('📡 Setting up Firebase listeners...');
-
-                    // Load list of all available weeks
-                    const weeksRef = db.ref('weeks');
-
-                    weeksRef.on('value', (snapshot) => {
-                        console.log('✅ Received data from Firebase');
-                        clearTimeout(timeoutId); // Clear timeout on successful connection
-
-                        const weeksData = snapshot.val();
-                        console.log('Weeks data:', weeksData ? Object.keys(weeksData) : 'No data');
-
-                        if (weeksData) {
-                            const weeksList = Object.keys(weeksData).sort().reverse(); // Most recent first
-                            setAvailableWeeks(weeksList);
-                            console.log('📅 Available weeks:', weeksList);
-
-                            // Auto-select most recent week only once on first load
-                            if (!hasAutoSelectedWeek.current && weeksList.length > 0) {
-                                hasAutoSelectedWeek.current = true;
-                                setSelectedWeek(weeksList[0]);
-                                console.log('📌 Auto-selected week:', weeksList[0]);
-                            }
-                        } else {
-                            console.log('ℹ️ No weeks data found in Firebase');
-                        }
-
-                        setLoading(false);
-                        console.log('✅ Loading complete');
-                    }, (error) => {
-                        console.error('❌ Error loading weeks data:', error);
-                        console.error('Error code:', error.code);
-                        console.error('Error message:', error.message);
-                        clearTimeout(timeoutId);
-                        setLoading(false);
-                        setSyncStatus('Error');
-                        alert('Error loading data from Firebase: ' + error.message + '\n\nYou may not have permission to access this database.');
-                    });
-
-                    // Handle connection status
-                    const connectedRef = db.ref('.info/connected');
-                    connectedRef.on('value', (snap) => {
-                        if (snap.val() === true) {
-                            console.log('🟢 Firebase connected');
-                            setSyncStatus('Connected');
-                        } else {
-                            console.log('🔴 Firebase disconnected');
-                            setSyncStatus('Disconnected');
-                        }
-                    });
-                } catch (error) {
-                    console.error('❌ Error setting up Firebase listeners:', error);
-                    clearTimeout(timeoutId);
-                    setLoading(false);
-                    setSyncStatus('Error');
-                }
+                setSyncStatus('Connected');
             };
 
             // Load data for selected week

@@ -45,11 +45,13 @@ var CONFIG = {
     // (From the URL: drive.google.com/drive/folders/THIS_PART)
     DRIVE_FOLDER_ID: 'YOUR_FOLDER_ID_HERE',
 
-    // ── Firebase ──────────────────────────────────────────────────────────────
-    FIREBASE_DB_URL: 'https://staffingtool-1ab4f-default-rtdb.firebaseio.com',
+    // ── Supabase (shared platform project) ───────────────────────────────────
+    SUPABASE_URL: 'https://oavksqgwjqlbnyairljn.supabase.co',
 
-    // Firebase Console → Project Settings → Service Accounts → Database Secrets → Show
-    FIREBASE_SECRET: 'YOUR_DATABASE_SECRET_HERE',
+    // Supabase dashboard → Project Settings → API → Project API keys → service_role.
+    // This bypasses RLS, which is required since this script doesn't sign in
+    // as a platform user. Treat it like a root password.
+    SUPABASE_SERVICE_KEY: 'YOUR_SERVICE_ROLE_KEY_HERE',
 
     // Send a summary email after each sync? Uses your Google account email.
     // Set to '' to disable.
@@ -114,7 +116,7 @@ function syncFromGmail() {
     }
 
     // Sort by the YYYY-MM-DD-HH-MM-SS timestamp embedded in the filename
-    // so the most recent snapshot is always the last write to Firebase.
+    // so the most recent snapshot is always the last write to Supabase.
     toProcess.sort(function(a, b) {
         return filenameTimestamp(a.attachment.getName()) - filenameTimestamp(b.attachment.getName());
     });
@@ -123,7 +125,7 @@ function syncFromGmail() {
     toProcess.forEach(function(item) { log('  ' + item.attachment.getName()); });
 
     // Each attachment is a full roster snapshot — process oldest→newest so the
-    // latest timestamp wins in Firebase.
+    // latest timestamp wins in Supabase.
     var lastResult, lastName;
     toProcess.forEach(function(item) {
         log('Processing: ' + item.attachment.getName());
@@ -282,8 +284,8 @@ function performSync(attachment) {
     var fileIds = Object.keys(fileAssociates);
     log('Associates in file: ' + fileIds.length);
 
-    // Fetch current roster from Firebase
-    var currentRoster = firebaseGet('/roster/associates') || {};
+    // Fetch current roster from Supabase
+    var currentRoster = supabaseGetRosterAssociates() || {};
     var currentIds = Object.keys(currentRoster);
 
     // Merge: in file → active. Missing from file → inactive.
@@ -299,7 +301,7 @@ function performSync(attachment) {
     var inactiveCount = currentIds.filter(function(id) { return currentRoster[id].isActive && !fileAssociates[id]; }).length;
     var syncTime      = new Date().toISOString();
 
-    firebasePut('/roster', { associates: updatedRoster, lastSync: syncTime });
+    supabaseUpsertRoster(updatedRoster, syncTime);
 
     var activeCount = Object.values(updatedRoster).filter(function(a) { return a.isActive; }).length;
     return { total: fileIds.length, active: activeCount, newAdded: newCount, newlyInactive: inactiveCount, syncTime: syncTime };
@@ -451,23 +453,36 @@ function findColumn(headers, options) {
     });
 }
 
-function firebaseGet(path) {
-    var url  = CONFIG.FIREBASE_DB_URL + path + '.json?auth=' + CONFIG.FIREBASE_SECRET;
-    var resp = UrlFetchApp.fetch(url, { method: 'get', muteHttpExceptions: true });
-    if (resp.getResponseCode() !== 200) throw new Error('Firebase GET failed: ' + resp.getContentText());
-    return JSON.parse(resp.getContentText());
+function supabaseGetRosterAssociates() {
+    var url  = CONFIG.SUPABASE_URL + '/rest/v1/staffing_roster?id=eq.current&select=associates';
+    var resp = UrlFetchApp.fetch(url, {
+        method: 'get',
+        headers: {
+            apikey: CONFIG.SUPABASE_SERVICE_KEY,
+            Authorization: 'Bearer ' + CONFIG.SUPABASE_SERVICE_KEY,
+        },
+        muteHttpExceptions: true,
+    });
+    if (resp.getResponseCode() !== 200) throw new Error('Supabase GET failed: ' + resp.getContentText());
+    var rows = JSON.parse(resp.getContentText());
+    return rows.length ? rows[0].associates : null;
 }
 
-function firebasePut(path, body) {
-    var url  = CONFIG.FIREBASE_DB_URL + path + '.json?auth=' + CONFIG.FIREBASE_SECRET;
+function supabaseUpsertRoster(associates, lastSync) {
+    var url  = CONFIG.SUPABASE_URL + '/rest/v1/staffing_roster';
     var resp = UrlFetchApp.fetch(url, {
-        method: 'put',
+        method: 'post',
         contentType: 'application/json',
-        payload: JSON.stringify(body),
+        headers: {
+            apikey: CONFIG.SUPABASE_SERVICE_KEY,
+            Authorization: 'Bearer ' + CONFIG.SUPABASE_SERVICE_KEY,
+            Prefer: 'resolution=merge-duplicates',
+        },
+        payload: JSON.stringify({ id: 'current', associates: associates, last_sync: lastSync }),
         muteHttpExceptions: true,
     });
     if (resp.getResponseCode() < 200 || resp.getResponseCode() >= 300) {
-        throw new Error('Firebase PUT failed (' + resp.getResponseCode() + '): ' + resp.getContentText());
+        throw new Error('Supabase upsert failed (' + resp.getResponseCode() + '): ' + resp.getContentText());
     }
 }
 

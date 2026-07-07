@@ -1,6 +1,6 @@
 # Crescent Staffing Planner
 
-A compact, cloud-enabled staffing management tool for production environments. Built for managers who need to quickly staff 120+ associates per shift with auto-save and remote access capabilities.
+A compact, cloud-enabled staffing management tool for production environments. Built for managers who need to quickly staff 120+ associates per shift with auto-save and remote access capabilities. Part of the 30080 Utility platform — see the root [README.md](../../README.md) for the shared Supabase setup (login) this app depends on.
 
 ## Features
 
@@ -19,7 +19,7 @@ A compact, cloud-enabled staffing management tool for production environments. B
 
 ### Cloud Sync & Remote Access
 - **Auto-save** - Changes automatically save 2 seconds after editing
-- **Firebase integration** - Cloud storage for remote access
+- **Supabase integration** - Shared platform database for remote access, gated behind the platform login
 - **Local fallback** - Works offline with localStorage
 - **Reporting tab** - View and download historical staffing data
 
@@ -36,85 +36,13 @@ A compact, cloud-enabled staffing management tool for production environments. B
 3. **Start Staffing** - Begin entering associate names
 4. **Auto-save** - Your changes save automatically
 
-## Firebase Setup (For Cloud Sync)
+## Cloud Setup
 
-To enable cloud storage and remote access, you need to configure Firebase:
-
-### Step 1: Create a Firebase Project
-
-1. Go to [Firebase Console](https://console.firebase.google.com/)
-2. Click "Add project" or "Create a project"
-3. Enter a project name (e.g., "crescent-staffing")
-4. Click Continue through the setup wizard
-5. Choose "Default Account for Firebase" for Google Analytics
-6. Click "Create project"
-
-### Step 2: Create a Web App
-
-1. In your Firebase project, click the Web icon (</>)
-2. Enter an app nickname (e.g., "Staffing Planner")
-3. **DO NOT** check "Also set up Firebase Hosting"
-4. Click "Register app"
-5. Copy the Firebase configuration object (it will look like this):
-
-```javascript
-const firebaseConfig = {
-  apiKey: "AIzaSyXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
-  authDomain: "your-project.firebaseapp.com",
-  projectId: "your-project",
-  storageBucket: "your-project.appspot.com",
-  messagingSenderId: "123456789012",
-  appId: "1:123456789012:web:abcdef1234567890"
-};
-```
-
-### Step 3: Enable Firestore Database
-
-1. In Firebase Console, go to "Build" > "Firestore Database"
-2. Click "Create database"
-3. Choose "Start in **test mode**" (for initial setup)
-4. Select a location (choose closest to your facility)
-5. Click "Enable"
-
-**IMPORTANT**: For production use, configure proper security rules:
-
-```
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /staffing/{document=**} {
-      allow read, write: if true; // Change this for production!
-    }
-  }
-}
-```
-
-### Step 4: Configure the Application
-
-1. Open `index.html` in a text editor
-2. Find the `FIREBASE_CONFIG` section (around line 494)
-3. Replace the placeholder values with your Firebase config:
-
-```javascript
-const FIREBASE_CONFIG = {
-    apiKey: "YOUR_API_KEY_HERE",
-    authDomain: "your-project.firebaseapp.com",
-    projectId: "your-project-id",
-    storageBucket: "your-project.appspot.com",
-    messagingSenderId: "123456789012",
-    appId: "1:123456789012:web:abcdef1234567890"
-};
-```
-
-4. Save the file
-5. Refresh the page in your browser
-
-### Step 5: Verify It's Working
-
-1. Open the staffing planner
-2. If Firebase is configured correctly, you **will NOT** see the yellow warning banner
-3. When you make changes, you should see "Saved to cloud ✓" in the top right
-4. Check Firebase Console > Firestore Database to see your saved data
+Cloud storage now comes from the shared platform Supabase project (see the
+root README) rather than a per-app Firebase project — there's nothing to
+configure in this app specifically. Signing in at the platform dashboard is
+enough; staffing sheets, core associates, roster, and Badge Check data all
+read/write through `shared/js/supabase-config.js` (loaded by this page).
 
 ## Usage Guide
 
@@ -211,46 +139,25 @@ data arrives.
 the exported `.xlsx`. It writes the rows to `statusRaw` (+ `statusMeta`); every
 device resolves and sees it.
 
-**Next — automated daily sync from SharePoint (Power Automate):** Realtime
-Database has a REST API, so a scheduled flow can push the data without any app
-backend. Recommended shape:
+**Automated daily sync from SharePoint (Power Automate):** Supabase's REST
+API (PostgREST) lets a scheduled flow push the data without any app backend —
+see [`SYNC-AND-AUTH-SETUP.md`](SYNC-AND-AUTH-SETUP.md) for the exact flow
+shape and credentials to use.
 
-1. **Recurrence** trigger (e.g., daily at shift start).
-2. **Excel Online (Business) → List rows present in a table** for each tab. (Standard connector.)
-3. **HTTP** action (premium connector) — `PUT` the rows to Firebase:
-   `PUT https://staffingtool-1ab4f-default-rtdb.firebaseio.com/statusRaw.json?auth=<DB_SECRET>`
-   with a JSON body of the raw rows, and `PUT .../statusMeta.json` with
-   `{ "updatedAt": "<utcNow>", "source": "sharepoint-sync" }`.
-   - Get `<DB_SECRET>` from Firebase Console → Project Settings → Service Accounts →
-     Database secrets. Store it in a secure variable / Azure Key Vault, never in the flow body.
-
-> **Why push raw rows (`statusRaw`) instead of a resolved `statusList`?** It keeps
+> **Why push raw rows (`statusRaw`) instead of a resolved status list?** It keeps
 > the DNR-outranks-suspension precedence and the working-day return-date math in
 > one place (the app), so Power Automate just dumps rows — no date logic in the
-> flow. The app resolves `statusRaw` on load (live — open screens update when the
-> sync runs). Row field names are matched leniently, so the clean names from the
+> flow. The app resolves `statusRaw` on load, and live-updates open screens when
+> the sync runs. Row field names are matched leniently, so the clean names from the
 > Power Automate Select step *and* the original Excel headers both work.
 
-### ⚠️ Security — read before syncing real names
+### Security
 
-This list contains sensitive HR/PII data, and the database currently uses the
-wide-open default rule (`".read"/".write": true`). **Lock this down before pushing
-real suspension/DNR data.** Because the app has no login today, proper protection
-means adding **Firebase Authentication** (restrict sign-in to the team) and then:
-
-```
-{
-  "rules": {
-    "statusList":  { ".read": "auth != null", ".write": "auth != null" },
-    "statusRaw":   { ".read": "auth != null", ".write": "auth != null" },
-    "statusMeta":  { ".read": "auth != null", ".write": "auth != null" }
-  }
-}
-```
-
-The Power Automate flow would then authenticate with a **service-account OAuth
-token** rather than the legacy DB secret. Adding auth changes the login flow for
-all users, so it's a deliberate next step — flagged here, not silently skipped.
+This list contains sensitive HR/PII data. It now sits behind the platform's
+real Supabase login (`badge_status_raw` table, RLS requires `auth.uid() is
+not null`) instead of Firebase's old wide-open default rule — see
+[`SYNC-AND-AUTH-SETUP.md`](SYNC-AND-AUTH-SETUP.md) for how the sync flow
+authenticates now that reads/writes require a signed-in session.
 
 ## Browser Compatibility
 
@@ -261,31 +168,23 @@ all users, so it's a deliberate next step — flagged here, not silently skipped
 
 ## Data Storage
 
-- **Without Firebase**: Data stored in browser localStorage (local only)
-- **With Firebase**: Data synced to cloud (accessible from any device)
+- **Signed in**: Data synced to the shared Supabase project (accessible from any device)
+- **Offline**: Falls back to browser localStorage
 - **Auto-save**: Triggers 2 seconds after last change
 - **Manual export**: Available via Export button
-
-## Security Notes
-
-⚠️ **For Production Use**:
-1. Configure Firebase security rules
-2. Consider adding authentication
-3. Use environment-specific Firebase projects
-4. Regular backups recommended
 
 ## Support
 
 For issues or questions:
 - Check browser console for error messages
-- Verify Firebase configuration
+- Confirm you're signed in to the platform
 - Ensure internet connection for cloud sync
 - Test with different browsers if issues persist
 
 ## Technical Details
 
 - **Framework**: React 18 (via CDN)
-- **Database**: Firebase Firestore
+- **Database**: Supabase (shared platform project)
 - **Fallback**: Browser localStorage
 - **File size**: Single HTML file (~50KB)
 - **Dependencies**: None (all loaded via CDN)

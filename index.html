@@ -90,9 +90,8 @@
     </form>
   </div>
 </div>
-<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
-<script src="./shared/js/firebase-config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="./shared/js/supabase-config.js"></script>
 <script src="./shared/js/auth-guard.js"></script>
 
 <header>
@@ -137,12 +136,12 @@
 </main>
 
 <script>
-  // window.platformAuth is set synchronously by shared/js/auth-guard.js,
-  // loaded above, before this script runs.
+  // window.platformAuth/platformSupabase are set synchronously by
+  // shared/js/auth-guard.js, loaded above, before this script runs.
   if (window.platformAuth) {
     var btn = document.getElementById("platformSignOutBtn");
-    window.platformAuth.onAuthStateChanged(function (user) {
-      btn.style.display = user ? "" : "none";
+    window.platformSupabase.auth.onAuthStateChange(function (_event, session) {
+      btn.style.display = session ? "" : "none";
     });
     btn.addEventListener("click", function () { window.platformAuth.signOut(); });
   }

@@ -1,19 +1,28 @@
 // Shared login gate for every page in the 30080 Utility platform. Expects
-// the page to have already loaded the Firebase compat SDK (app + auth) and
-// this file's firebase-config.js before this script, and to contain the
-// overlay markup this file looks for (#platformAuthOverlay etc. — see any
-// apps/*/index.html for the block to copy).
-//
-// Initializes its own NAMED Firebase app ("platformAuth") rather than the
-// default app, so it can safely share a page with another app's own
-// firebase.initializeApp() call (several mounted apps have their own
-// Firebase project for data sync, separate from this platform-wide login).
+// the page to have already loaded the Supabase JS SDK
+// (@supabase/supabase-js@2 via CDN) and this file's supabase-config.js
+// before this script, and to contain the overlay markup this file looks
+// for (#platformAuthOverlay etc. — see any apps/*/index.html for the block
+// to copy).
 //
 // Blocks the rest of the page (via the .platform-auth-unlocked class on
-// <body>, see auth-overlay.css) until a Firebase user is signed in. If the
-// shared Firebase project hasn't been configured yet (firebase-config.js
-// still has placeholder values), it unlocks the page but leaves a visible
-// warning instead of silently pretending the app is protected.
+// <body>, see auth-overlay.css) until a Supabase user is signed in. If the
+// shared project hasn't been configured yet (supabase-config.js still has
+// placeholder values), it unlocks the page but leaves a visible warning
+// instead of silently pretending the app is protected.
+//
+// Exposes:
+//   window.platformSupabase — the Supabase client, for each app's own
+//     data-access code to reuse instead of creating its own.
+//   window.platformAuth — { client, signOut() }
+//   window.platformAuthReady — a Promise that resolves once the *initial*
+//     signed-in/signed-out state is known. App init code that queries
+//     Supabase on page load (e.g. loading saved records) should
+//     `await window.platformAuthReady` first — otherwise it can run before
+//     any session exists and RLS will silently return zero rows. If the
+//     auth state later *changes* (user signs in or out after the page
+//     already loaded), the page reloads so all app init code re-runs with
+//     the new session rather than being left stale.
 (function () {
   const overlay = document.getElementById("platformAuthOverlay");
   const msg = document.getElementById("platformAuthMsg");
@@ -23,9 +32,9 @@
   if (!overlay) return;
 
   const configured =
-    typeof platformFirebaseConfig !== "undefined" &&
-    !!platformFirebaseConfig.apiKey &&
-    !platformFirebaseConfig.apiKey.startsWith("YOUR_");
+    typeof PLATFORM_SUPABASE_URL !== "undefined" &&
+    !!PLATFORM_SUPABASE_URL &&
+    !PLATFORM_SUPABASE_URL.startsWith("YOUR_");
 
   function unlock() {
     document.body.classList.add("platform-auth-unlocked");
@@ -33,15 +42,24 @@
 
   if (!configured) {
     msg.textContent =
-      "Platform sign-in isn't configured yet, so this app is currently unprotected. See README.md → “Activating real sign-in” to finish setup.";
+      "Platform sign-in isn't configured yet, so this app is currently unprotected. See README.md for setup.";
     overlay.classList.add("platform-auth-warning");
     unlock();
+    window.platformAuthReady = Promise.resolve(null);
     return;
   }
 
-  const platformApp = firebase.initializeApp(platformFirebaseConfig, "platformAuth");
-  const auth = firebase.auth(platformApp);
-  window.platformAuth = auth; // exposed so pages can add e.g. a sign-out button
+  const client = supabase.createClient(PLATFORM_SUPABASE_URL, PLATFORM_SUPABASE_ANON_KEY);
+  window.platformSupabase = client;
+  window.platformAuth = {
+    client,
+    signOut: () => client.auth.signOut(),
+  };
+
+  let resolveReady;
+  window.platformAuthReady = new Promise((resolve) => {
+    resolveReady = resolve;
+  });
 
   function showSignedOut(errorText) {
     overlay.style.display = "";
@@ -55,17 +73,27 @@
     unlock();
   }
 
-  auth.onAuthStateChanged((user) => {
-    if (user) showSignedIn();
+  let initialCheckDone = false;
+  client.auth.onAuthStateChange((_event, session) => {
+    if (!initialCheckDone) return; // getSession() below handles the first state
+    // Auth state changed after the page already rendered (sign in/out) —
+    // reload so every app's own init code picks up the new session.
+    location.reload();
+  });
+
+  client.auth.getSession().then(({ data }) => {
+    if (data.session) showSignedIn();
     else showSignedOut();
+    initialCheckDone = true;
+    resolveReady(data.session || null);
   });
 
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
-    try {
-      await auth.signInWithEmailAndPassword(emailInput.value, passwordInput.value);
-    } catch (err) {
-      showSignedOut("Sign-in failed: " + err.message);
-    }
+    const { error } = await client.auth.signInWithPassword({
+      email: emailInput.value,
+      password: passwordInput.value,
+    });
+    if (error) showSignedOut("Sign-in failed: " + error.message);
   });
 })();
