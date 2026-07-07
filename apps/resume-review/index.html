@@ -1,0 +1,3923 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BridgeBuilder</title>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    /* EB Brand Palette */
+    --eb-light-gray: #EBEBEB;
+    --eb-blue: #0033EB;
+    --eb-navy: #001166;
+    --eb-teal: #00EEBB;
+    --eb-purple: #9933EB;
+
+    /* Surfaces */
+    --bg: #F0F2F8;
+    --surface: #FFFFFF;
+    --surface2: #F5F6FA;
+    --surface3: #EAECF3;
+    --border: #D4D8E8;
+    --border-light: #A8B0CC;
+
+    /* Text */
+    --text: #001166;
+    --text-body: #1A2240;
+    --text-muted: #5A6480;
+    --text-dim: #9AA3B8;
+
+    /* Accent */
+    --accent: #0033EB;
+    --accent-dim: rgba(0,51,235,0.07);
+    --accent-hover: #0029C4;
+
+    /* Verdict: Viable -> teal */
+    --viable: #007A5E;
+    --viable-bright: #00EEBB;
+    --viable-dim: rgba(0,238,187,0.12);
+    --viable-border: rgba(0,238,187,0.45);
+
+    /* Verdict: Review -> amber */
+    --review: #B45309;
+    --review-dim: rgba(180,83,9,0.08);
+    --review-border: rgba(180,83,9,0.28);
+
+    /* Verdict: Reject -> red */
+    --reject: #C8192A;
+    --reject-dim: rgba(200,25,42,0.07);
+    --reject-border: rgba(200,25,42,0.28);
+
+    --font: 'Roboto', Arial, 'Aptos', sans-serif;
+    --radius: 8px;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text-body);
+    font-family: var(--font);
+    font-size: 13px;
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+
+  /* ---- APP SHELL ---- */
+  .app { display: grid; grid-template-columns: 260px 1fr; min-height: 100vh; }
+
+  /* ---- SIDEBAR ---- */
+  .sidebar {
+    background: #FFFFFF;
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+    padding: 24px 16px;
+    gap: 20px;
+  }
+  .logo {
+    padding: 4px 8px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .logo-eyebrow {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 5px;
+  }
+  .logo-name {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--eb-navy);
+    line-height: 1.2;
+  }
+  .logo-tagline {
+    font-size: 10px;
+    color: var(--text-dim);
+    margin-top: 3px;
+    letter-spacing: 0.04em;
+  }
+  .nav { display: flex; flex-direction: column; gap: 2px; }
+  .nav-label {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    padding: 0 10px;
+    margin: 10px 0 4px;
+  }
+  .nav-btn {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    font-family: var(--font);
+    font-size: 13px;
+    cursor: pointer;
+    text-align: left;
+    width: 100%;
+    transition: background 0.12s, color 0.12s;
+  }
+  .nav-btn:hover { background: var(--accent-dim); color: var(--accent); }
+  .nav-btn.active { background: var(--accent-dim); color: var(--accent); font-weight: 600; border-left: 3px solid var(--accent); padding-left: 7px; }
+  .nav-btn .ni { width: 15px; text-align: center; font-size: 13px; }
+  .nav-count {
+    margin-left: auto;
+    background: var(--surface2);
+    border-radius: 10px;
+    padding: 1px 7px;
+    font-size: 10px;
+    color: var(--text-dim);
+  }
+  .nav-count.has-results { background: var(--accent-dim); color: var(--accent); }
+
+
+  /* ---- MAIN ---- */
+  .main { overflow: hidden; display: flex; flex-direction: column; }
+  .panel { display: none; flex-direction: column; flex: 1; padding: 36px 40px; gap: 22px; overflow-y: auto; }
+  .panel.active { display: flex; }
+
+  .panel-header { display: flex; flex-direction: column; gap: 5px; margin-bottom: 4px; }
+  .panel-title { font-size: 26px; font-weight: 700; color: var(--text); }
+  .panel-sub { color: var(--text-muted); font-size: 13px; }
+
+  /* ---- CARDS ---- */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,17,102,0.06);
+  }
+  .card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 13px 18px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface2);
+  }
+  .card-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .card-badge {
+    font-size: 9px;
+    font-weight: 500;
+    color: var(--text-dim);
+    background: var(--surface3);
+    padding: 2px 6px;
+    border-radius: 3px;
+    letter-spacing: 0.04em;
+    text-transform: none;
+  }
+  .card-body { padding: 18px; }
+
+  textarea, input[type="text"], input[type="email"], input[type="tel"] {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 14px;
+    color: var(--text-body);
+    font-family: var(--font);
+    font-size: 13px;
+    line-height: 1.65;
+    transition: border-color 0.12s, box-shadow 0.12s;
+  }
+  textarea { width: 100%; resize: vertical; }
+  textarea:focus, input[type="text"]:focus, input[type="email"]:focus, input[type="tel"]:focus {
+    outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim);
+  }
+  textarea::placeholder, input::placeholder { color: var(--text-dim); }
+
+  /* ---- MODE TOGGLE ---- */
+  .mode-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .mode-toggle {
+    display: flex;
+    gap: 3px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 3px;
+  }
+  .mode-btn {
+    padding: 5px 14px;
+    border-radius: 4px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    font-family: var(--font);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.12s;
+  }
+  .mode-btn.active { background: var(--surface); color: var(--text); font-weight: 600; box-shadow: 0 1px 3px rgba(0,17,102,0.1); }
+  .mode-hint { font-size: 11px; color: var(--text-dim); }
+
+  /* ---- FILE DROP ---- */
+  .file-drop {
+    position: relative;
+    border: 2px dashed var(--border);
+    border-radius: var(--radius);
+    padding: 26px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+    background: var(--surface2);
+  }
+  .file-drop:hover, .file-drop.dragover {
+    border-color: var(--accent);
+    background: var(--accent-dim);
+  }
+  .file-drop input[type="file"] {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+    width: 100%;
+    height: 100%;
+  }
+  .drop-icon { font-size: 22px; margin-bottom: 6px; }
+  .drop-text { color: var(--text-muted); font-size: 13px; }
+  .drop-text strong { color: var(--accent); }
+  .drop-hint { font-size: 11px; color: var(--text-dim); margin-top: 3px; }
+
+  .file-list { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+  .file-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+  }
+  .file-icon { font-size: 14px; flex-shrink: 0; }
+  .file-name { flex: 1; font-size: 12px; color: var(--text-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file-size { font-size: 11px; color: var(--text-dim); flex-shrink: 0; }
+  .file-remove {
+    background: none; border: none; color: var(--text-dim);
+    cursor: pointer; font-size: 13px; padding: 2px 4px;
+    border-radius: 3px; transition: color 0.12s; flex-shrink: 0;
+  }
+  .file-remove:hover { color: var(--reject); }
+
+  /* ---- SUBMIT ROW ---- */
+  .submit-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .btn-analyze {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 11px 26px;
+    font-family: var(--font);
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.12s, transform 0.12s, box-shadow 0.12s;
+    letter-spacing: 0.02em;
+  }
+  .btn-analyze:hover:not(:disabled) { background: var(--accent-hover); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,51,235,0.25); }
+  .btn-analyze:disabled { opacity: 0.4; cursor: not-allowed; transform: none; box-shadow: none; }
+  .btn-clear {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    border-radius: 6px;
+    padding: 10px 18px;
+    font-family: var(--font);
+    font-size: 13px;
+    cursor: pointer;
+    transition: border-color 0.12s, color 0.12s;
+  }
+  .btn-clear:hover { border-color: var(--border-light); color: var(--text-body); }
+  .status-msg { font-size: 12px; color: var(--text-dim); flex: 1; }
+  .status-msg.error { color: var(--reject); }
+  .status-msg.running { color: var(--accent); }
+
+  /* ---- PROGRESS BAR ---- */
+  .progress-wrap { display: none; flex-direction: column; gap: 6px; }
+  .progress-wrap.visible { display: flex; }
+  .progress-label { font-size: 12px; color: var(--text-muted); display: flex; justify-content: space-between; }
+  .progress-bar-bg {
+    height: 4px;
+    background: var(--surface3);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .progress-bar-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 2px;
+    transition: width 0.3s ease;
+    width: 0%;
+  }
+
+  /* ---- RESULTS ---- */
+  .results-grid { display: flex; flex-direction: column; gap: 14px; }
+
+  .result-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    box-shadow: 0 1px 3px rgba(0,17,102,0.06);
+  }
+  .result-card.viable { border-color: var(--viable-border); }
+  .result-card.review { border-color: var(--review-border); }
+  .result-card.reject { border-color: var(--reject-border); }
+
+  .result-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 18px;
+    gap: 12px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .result-header:hover { background: var(--surface2); }
+
+  .result-left { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; }
+
+  .verdict-badge {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    padding: 4px 10px;
+    border-radius: 4px;
+    flex-shrink: 0;
+    text-transform: uppercase;
+  }
+  .verdict-badge.viable { background: var(--viable-dim); color: var(--viable); border: 1px solid var(--viable-border); }
+  .verdict-badge.review { background: var(--review-dim); color: var(--review); border: 1px solid var(--review-border); }
+  .verdict-badge.reject { background: var(--reject-dim); color: var(--reject); border: 1px solid var(--reject-border); }
+
+  .result-name {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .result-summary {
+    font-size: 12px;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+  }
+
+  .result-meta { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+
+  .fit-score {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+  }
+  .fit-score-num {
+    font-size: 20px;
+    font-weight: 700;
+    line-height: 1;
+  }
+  .fit-score-num.viable { color: var(--viable); }
+  .fit-score-num.review { color: var(--review); }
+  .fit-score-num.reject { color: var(--reject); }
+  .fit-score-label { font-size: 8px; color: var(--text-dim); letter-spacing: 0.06em; text-transform: uppercase; }
+
+  .confidence-tag {
+    font-size: 9px;
+    color: var(--text-muted);
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    padding: 2px 7px;
+    border-radius: 3px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .chevron { color: var(--text-dim); font-size: 11px; transition: transform 0.15s; }
+  .chevron.open { transform: rotate(180deg); }
+
+  .result-body { display: none; padding: 0 18px 18px; border-top: 1px solid var(--border); }
+  .result-body.open { display: block; }
+
+  .result-sections { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 16px; }
+  .result-section { display: flex; flex-direction: column; gap: 8px; }
+  .rs-title {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+  .rs-list { display: flex; flex-direction: column; gap: 5px; }
+  .rs-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 7px;
+    font-size: 12px;
+    color: var(--text-body);
+    line-height: 1.5;
+  }
+  .rs-item::before { content: "—"; color: var(--text-dim); flex-shrink: 0; }
+  .rs-empty { font-size: 12px; color: var(--text-dim); font-style: italic; }
+
+  .reasoning-block {
+    margin-top: 14px;
+    padding: 14px 16px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 13px;
+    color: var(--text-body);
+    line-height: 1.65;
+  }
+  .reasoning-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+  }
+
+  /* ---- RESULTS FILTERS ---- */
+  .results-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .filter-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    border-radius: 5px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-muted);
+    font-family: var(--font);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.12s;
+  }
+  .filter-btn:hover { border-color: var(--border-light); color: var(--text-body); }
+  .filter-btn.active.viable { border-color: var(--viable-border); color: var(--viable); background: var(--viable-dim); }
+  .filter-btn.active.review { border-color: var(--review-border); color: var(--review); background: var(--review-dim); }
+  .filter-btn.active.reject { border-color: var(--reject-border); color: var(--reject); background: var(--reject-dim); }
+  .filter-btn.active.all { border-color: rgba(0,51,235,0.3); color: var(--accent); background: var(--accent-dim); }
+
+  .results-summary-row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .summary-stat {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    flex: 1;
+    min-width: 100px;
+    box-shadow: 0 1px 3px rgba(0,17,102,0.06);
+  }
+  .summary-stat-num {
+    font-size: 24px;
+    font-weight: 700;
+  }
+  .summary-stat-num.viable { color: var(--viable); }
+  .summary-stat-num.review { color: var(--review); }
+  .summary-stat-num.reject { color: var(--reject); }
+  .summary-stat-label { font-size: 11px; color: var(--text-muted); line-height: 1.3; }
+
+  /* ---- EMPTY STATE ---- */
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 60px 20px;
+    gap: 12px;
+    text-align: center;
+  }
+  .empty-icon { font-size: 36px; opacity: 0.35; }
+  .empty-title { font-size: 16px; font-weight: 700; color: var(--text-muted); }
+  .empty-sub { font-size: 13px; color: var(--text-dim); max-width: 280px; line-height: 1.6; }
+
+  /* ---- SPINNER ---- */
+  .spinner {
+    width: 14px; height: 14px;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    flex-shrink: 0;
+  }
+  .spinner-dark {
+    width: 14px; height: 14px;
+    border: 2px solid var(--surface3);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    flex-shrink: 0;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ---- NOTIFICATIONS ---- */
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: var(--eb-navy);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 8px;
+    padding: 12px 16px;
+    font-size: 13px;
+    color: #fff;
+    box-shadow: 0 8px 32px rgba(0,17,102,0.25);
+    z-index: 9999;
+    transform: translateY(20px);
+    opacity: 0;
+    transition: all 0.25s;
+    max-width: 320px;
+  }
+  .toast.show { transform: translateY(0); opacity: 1; }
+  .toast.error { border-color: rgba(200,25,42,0.5); }
+  .toast.success { border-color: rgba(0,238,187,0.4); }
+
+  /* ---- JD SAVE/LOAD ---- */
+  .jd-toolbar { margin-bottom: 8px; }
+  .jd-toolbar select {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 10px;
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 12px;
+    cursor: pointer;
+    max-width: 320px;
+    width: 100%;
+  }
+  .jd-toolbar select:focus { outline: none; border-color: var(--accent); }
+  .jd-save-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .jd-save-row input {
+    flex: 1;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 10px;
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 12px;
+    transition: border-color .12s;
+  }
+  .jd-save-row input:focus { outline: none; border-color: var(--accent); }
+  .btn-save-jd {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 14px;
+    color: var(--text-body);
+    font-family: var(--font);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background .12s, border-color .12s;
+  }
+  .btn-save-jd:hover { background: var(--surface3); border-color: var(--accent); }
+
+  /* ---- HISTORY ---- */
+  .loading-msg { padding: 40px 20px; text-align: center; color: var(--text-muted); font-size: 14px; }
+
+  /* ---- ENHANCE ---- */
+  .btn-enhance {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--eb-purple);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 11px 26px;
+    font-family: var(--font);
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.12s, transform 0.12s, box-shadow 0.12s;
+    letter-spacing: 0.02em;
+  }
+  .btn-enhance:hover:not(:disabled) { background: #7a22c9; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(153,51,235,0.3); }
+  .btn-enhance:disabled { opacity: 0.4; cursor: not-allowed; transform: none; box-shadow: none; }
+
+  /* ---- GENERATE ---- */
+  .btn-generate {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #007A5E;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 11px 26px;
+    font-family: var(--font);
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.12s, transform 0.12s, box-shadow 0.12s;
+    letter-spacing: 0.02em;
+  }
+  .btn-generate:hover:not(:disabled) { background: #006050; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,122,94,0.3); }
+  .btn-generate:disabled { opacity: 0.4; cursor: not-allowed; transform: none; box-shadow: none; }
+
+  /* ---- EMAIL BUTTON ---- */
+  .btn-email {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    border-radius: 6px;
+    border: 1px solid var(--eb-navy);
+    background: var(--eb-navy);
+    color: #fff;
+    font-family: var(--font);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.12s;
+  }
+  .btn-email:hover { background: var(--accent); border-color: var(--accent); }
+  .btn-email:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* ---- SECONDARY BUTTON ---- */
+  .btn-secondary {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--text-body);
+    font-family: var(--font);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.12s;
+  }
+  .btn-secondary:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+
+  /* ---- EDITABLE RESUME BOX ---- */
+  .enhanced-resume-box, .editable-resume-box {
+    font-family: monospace;
+    font-size: 12px;
+    line-height: 1.75;
+    color: var(--text-body);
+    white-space: pre-wrap;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 18px;
+    max-height: 480px;
+    overflow-y: auto;
+    resize: vertical;
+    outline: none;
+  }
+  .editable-resume-box:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-dim);
+  }
+
+  .enhance-action-row, .generate-action-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .enhance-changes-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 4px; }
+  .enhance-summary-block, .generate-summary-block {
+    margin-bottom: 12px;
+    padding: 12px 16px;
+    background: rgba(0,122,94,0.06);
+    border: 1px solid rgba(0,122,94,0.2);
+    border-radius: 6px;
+    font-size: 13px;
+    color: var(--text-body);
+    line-height: 1.6;
+  }
+  .enhance-summary-block {
+    background: rgba(153,51,235,0.06);
+    border-color: rgba(153,51,235,0.2);
+  }
+
+  /* ---- WORK ENTRY ---- */
+  .work-entries { display: flex; flex-direction: column; gap: 14px; }
+  .work-entry {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .work-entry-top {
+    display: grid;
+    grid-template-columns: 1fr 1fr auto;
+    gap: 10px;
+    align-items: start;
+  }
+  .work-entry-dates {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    grid-column: 1 / -2;
+  }
+  .work-entry input {
+    width: 100%;
+    padding: 8px 10px;
+    font-size: 12px;
+  }
+  .work-entry textarea {
+    font-size: 12px;
+    padding: 8px 10px;
+  }
+  .btn-remove-entry {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    border-radius: 5px;
+    padding: 6px 8px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.12s;
+    flex-shrink: 0;
+    align-self: flex-start;
+  }
+  .btn-remove-entry:hover { border-color: var(--reject); color: var(--reject); }
+  .btn-add-entry {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    border-radius: 6px;
+    border: 1px dashed var(--border-light);
+    background: transparent;
+    color: var(--text-muted);
+    font-family: var(--font);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.12s;
+    width: 100%;
+    justify-content: center;
+    margin-top: 4px;
+  }
+  .btn-add-entry:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+
+  /* ---- CONTACT INFO GRID ---- */
+  .contact-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .contact-grid input { width: 100%; }
+  .field-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+  }
+  .field-group { display: flex; flex-direction: column; gap: 4px; }
+
+  /* ---- EMAIL MODAL ---- */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,17,102,0.4);
+    z-index: 9998;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    width: min(640px, 100%);
+    max-height: 80vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 20px 60px rgba(0,17,102,0.2);
+  }
+  .modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface2);
+  }
+  .modal-title { font-size: 14px; font-weight: 700; color: var(--text); }
+  .modal-close {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 16px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    transition: color 0.12s;
+  }
+  .modal-close:hover { color: var(--text-body); }
+  .modal-body {
+    padding: 20px;
+    overflow-y: auto;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .modal-footer {
+    padding: 14px 20px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .email-subject {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+    padding: 8px 12px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+  }
+  .email-subject span { color: var(--text-body); font-weight: 700; }
+  .email-body-box {
+    font-family: var(--font);
+    font-size: 13px;
+    line-height: 1.7;
+    color: var(--text-body);
+    white-space: pre-wrap;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px;
+    min-height: 200px;
+    outline: none;
+    flex: 1;
+  }
+  .email-body-box:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+  .modal-loading {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 40px 20px;
+    justify-content: center;
+    color: var(--text-muted);
+    font-size: 14px;
+  }
+
+  /* ---- SCROLLBAR ---- */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--surface3); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--border-light); }
+
+  /* ---- RESPONSIVE ---- */
+  @media (max-width: 800px) {
+    .app { grid-template-columns: 1fr; }
+    .sidebar { position: static; height: auto; }
+    .panel { padding: 20px; }
+    .result-sections { grid-template-columns: 1fr; }
+    .contact-grid { grid-template-columns: 1fr; }
+  }
+
+  /* ---- INTERVIEW GUIDE ---- */
+  .btn-interview {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #B45309;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 11px 26px;
+    font-family: var(--font);
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.12s, transform 0.12s, box-shadow 0.12s;
+    letter-spacing: 0.02em;
+  }
+  .btn-interview:hover:not(:disabled) {
+    background: #92400E;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(180,83,9,0.3);
+  }
+  .btn-interview:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+  .interview-steps {
+    display: flex;
+    gap: 0;
+    margin-bottom: 18px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .interview-step {
+    flex: 1;
+    padding: 10px 16px;
+    text-align: center;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-dim);
+    background: var(--surface2);
+    border-right: 1px solid var(--border);
+    transition: all 0.15s;
+  }
+  .interview-step:last-child { border-right: none; }
+  .interview-step.active { background: var(--accent-dim); color: var(--accent); }
+  .interview-step.done { background: rgba(0,238,187,0.08); color: var(--viable); }
+
+  .interview-category {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,17,102,0.06);
+  }
+  .interview-category-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 18px;
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+  }
+  .interview-category-title {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text);
+  }
+  .interview-category-desc {
+    font-size: 11px;
+    color: var(--text-dim);
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: 0;
+    margin-left: 8px;
+  }
+
+  .interview-question-row { border-bottom: 1px solid var(--border); }
+  .interview-question-row:last-child { border-bottom: none; }
+
+  .interview-q-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 14px 18px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .interview-q-header:hover { background: var(--accent-dim); }
+  .interview-q-num { font-size: 11px; font-weight: 700; color: var(--text-dim); min-width: 24px; padding-top: 1px; }
+  .interview-q-text { flex: 1; font-size: 13px; color: var(--text-body); line-height: 1.55; }
+  .interview-q-chevron { color: var(--text-dim); font-size: 11px; transition: transform 0.15s; flex-shrink: 0; padding-top: 2px; }
+  .interview-q-chevron.open { transform: rotate(180deg); }
+
+  .interview-q-body { display: none; padding: 0 18px 18px 54px; flex-direction: column; gap: 12px; }
+  .interview-q-body.open { display: flex; }
+
+  .interview-notes-label { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 4px; }
+  .interview-notes-area {
+    width: 100%;
+    min-height: 80px;
+    resize: vertical;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 12px;
+    color: var(--text-body);
+    font-family: var(--font);
+    font-size: 13px;
+    line-height: 1.6;
+    transition: border-color 0.12s, box-shadow 0.12s;
+    box-sizing: border-box;
+  }
+  .interview-notes-area:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+  .interview-notes-area::placeholder { color: var(--text-dim); }
+
+  .followup-section { display: flex; flex-direction: column; gap: 8px; }
+  .followup-label { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted); }
+  .followup-list { display: flex; flex-direction: column; gap: 6px; }
+  .followup-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 10px 12px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 12px;
+    color: var(--text-body);
+    line-height: 1.55;
+  }
+  .followup-item::before { content: "↳"; color: var(--accent); font-weight: 700; flex-shrink: 0; }
+
+  .btn-followup {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 14px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--text-body);
+    font-family: var(--font);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.12s;
+    align-self: flex-start;
+  }
+  .btn-followup:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+  .btn-followup:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .recommendation-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 16px;
+    border-radius: 5px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+  }
+  .recommendation-badge.advance { background: var(--viable-dim); color: var(--viable); border: 1px solid var(--viable-border); }
+  .recommendation-badge.hold { background: var(--review-dim); color: var(--review); border: 1px solid var(--review-border); }
+  .recommendation-badge.decline { background: var(--reject-dim); color: var(--reject); border: 1px solid var(--reject-border); }
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://unpkg.com/docx@8.5.0/build/index.umd.js"></script>
+</head>
+<body>
+<link rel="stylesheet" href="../../shared/css/auth-overlay.css">
+<link rel="stylesheet" href="../../shared/css/dash-link.css">
+<div id="platformAuthOverlay" class="platform-auth-overlay">
+  <div class="platform-auth-box">
+    <h2>30080 Utility</h2>
+    <p id="platformAuthMsg">Checking sign-in&hellip;</p>
+    <form id="platformAuthForm" style="display:none;">
+      <input type="email" id="platformAuthEmail" placeholder="Work email" required autocomplete="username">
+      <input type="password" id="platformAuthPassword" placeholder="Password" required autocomplete="current-password">
+      <button type="submit">Sign in</button>
+    </form>
+  </div>
+</div>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+<script src="../../shared/js/firebase-config.js"></script>
+<script src="../../shared/js/auth-guard.js"></script>
+<script src="../../shared/js/dash-link.js"></script>
+
+<div class="app">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="logo">
+      <div class="logo-name">BridgeBuilder</div>
+      <div class="logo-tagline">AI-Powered Recruiting Tools</div>
+    </div>
+
+    <nav class="nav">
+      <div class="nav-label">Review</div>
+      <button class="nav-btn active" onclick="showPanel('review')" id="nav-review">
+        <span class="ni">📋</span> Review Candidates
+      </button>
+      <button class="nav-btn" onclick="showPanel('results')" id="nav-results">
+        <span class="ni">📊</span> Results
+        <span class="nav-count" id="results-count">0</span>
+      </button>
+      <button class="nav-btn" onclick="showPanel('history')" id="nav-history">
+        <span class="ni">🕑</span> History
+      </button>
+
+      <div class="nav-label" style="margin-top:14px;">Enhance</div>
+      <button class="nav-btn" onclick="showPanel('enhance')" id="nav-enhance">
+        <span class="ni">✨</span> Enhance Resume
+      </button>
+      <button class="nav-btn" onclick="showPanel('enhance-history')" id="nav-enhance-history">
+        <span class="ni">🕑</span> History
+      </button>
+
+      <div class="nav-label" style="margin-top:14px;">Generate</div>
+      <button class="nav-btn" onclick="showPanel('generate')" id="nav-generate">
+        <span class="ni">🪄</span> Generate Resume
+      </button>
+      <button class="nav-btn" onclick="showPanel('generate-history')" id="nav-generate-history">
+        <span class="ni">🕑</span> History
+      </button>
+
+      <div class="nav-label" style="margin-top:14px;">Interview</div>
+      <button class="nav-btn" onclick="showPanel('interview')" id="nav-interview">
+        <span class="ni">🎙️</span> Interview Guide
+      </button>
+      <button class="nav-btn" onclick="showPanel('interview-history')" id="nav-interview-history">
+        <span class="ni">🕑</span> History
+      </button>
+    </nav>
+
+  </aside>
+
+  <!-- MAIN -->
+  <main class="main">
+
+    <!-- REVIEW PANEL -->
+    <div class="panel active" id="panel-review">
+      <div class="panel-header">
+        <div class="panel-title">Review Candidates</div>
+        <div class="panel-sub">Paste a job description, add context, and upload resumes to analyze fit.</div>
+      </div>
+
+      <!-- JOB DESCRIPTION -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            📄 Job Description
+            <span class="card-badge">required</span>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="jd-toolbar">
+            <select id="jd-saved-select" onchange="loadSavedJob()">
+              <option value="">Load saved JD…</option>
+            </select>
+          </div>
+          <textarea id="job-desc" rows="8" placeholder="Paste the full job description here — include responsibilities, required qualifications, preferred qualifications, and any other role details. The more context provided, the more accurate the analysis."></textarea>
+          <div class="jd-save-row">
+            <input type="text" id="jd-save-title" placeholder="Save as… (title for this JD)" />
+            <button class="btn-save-jd" onclick="saveJobDescription()">Save JD</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- POSITION NOTES -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            🗒️ Position Notes
+            <span class="card-badge">optional</span>
+          </div>
+        </div>
+        <div class="card-body">
+          <textarea id="position-notes" rows="4" placeholder="Add any additional context not captured in the job description — client preferences, deal-breakers, specific industries to prioritize or avoid, compensation range, culture fit notes, etc."></textarea>
+        </div>
+      </div>
+
+      <!-- RESUMES -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            👤 Resumes
+            <span class="card-badge">required</span>
+          </div>
+          <div class="mode-toggle">
+            <button class="mode-btn active" id="mode-single" onclick="setMode('single')">Single</button>
+            <button class="mode-btn" id="mode-batch" onclick="setMode('batch')">Batch</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <!-- SINGLE MODE -->
+          <div id="single-mode">
+            <div class="file-drop" id="single-drop">
+              <input type="file" id="single-file" accept=".txt,.pdf,.doc,.docx" onchange="handleSingleFile(event)" />
+              <div class="drop-icon">📎</div>
+              <div class="drop-text"><strong>Click to upload</strong> or drag and drop</div>
+              <div class="drop-hint">Supported: .txt, .pdf, .doc, .docx — PDF/DOC text will be extracted</div>
+            </div>
+            <div id="single-file-display" style="display:none; margin-top:12px;">
+              <div class="file-item">
+                <span class="file-icon">📄</span>
+                <span class="file-name" id="single-fname"></span>
+                <span class="file-size" id="single-fsize"></span>
+                <button class="file-remove" onclick="clearSingleFile()">✕</button>
+              </div>
+              <div style="margin-top:10px;">
+                <div class="field-label">Candidate Name <span style="color:var(--text-dim);font-weight:400;text-transform:none;letter-spacing:0;">(optional override)</span></div>
+                <input type="text" id="single-name" placeholder="Auto-detected from resume" style="width:100%;" />
+              </div>
+            </div>
+          </div>
+
+          <!-- BATCH MODE -->
+          <div id="batch-mode" style="display:none;">
+            <div class="file-drop" id="batch-drop">
+              <input type="file" id="batch-files" accept=".txt,.pdf,.doc,.docx" multiple onchange="handleBatchFiles(event)" />
+              <div class="drop-icon">📦</div>
+              <div class="drop-text"><strong>Click to upload multiple files</strong> or drag and drop</div>
+              <div class="drop-hint">Select multiple resumes at once — each will be analyzed individually</div>
+            </div>
+            <div class="file-list" id="batch-file-list"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SUBMIT -->
+      <div class="submit-row">
+        <button class="btn-analyze" id="analyze-btn" onclick="runAnalysis()">
+          <span id="btn-icon">⚡</span>
+          <span id="btn-label">Analyze</span>
+        </button>
+        <button class="btn-clear" onclick="clearAll()">Clear All</button>
+        <span class="status-msg" id="status-msg"></span>
+      </div>
+
+      <div class="progress-wrap" id="progress-wrap">
+        <div class="progress-label">
+          <span id="progress-text">Analyzing...</span>
+          <span id="progress-frac"></span>
+        </div>
+        <div class="progress-bar-bg">
+          <div class="progress-bar-fill" id="progress-bar"></div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- RESULTS PANEL -->
+    <div class="panel" id="panel-results">
+      <div class="panel-header">
+        <div class="panel-title">Results</div>
+        <div class="panel-sub">All analyzed candidates from this session.</div>
+      </div>
+
+      <div id="results-content">
+        <div class="empty-state" id="empty-results">
+          <div class="empty-icon">🔍</div>
+          <div class="empty-title">No results yet</div>
+          <div class="empty-sub">Run an analysis from the Review Candidates panel to see assessments here.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- HISTORY PANEL -->
+    <div class="panel" id="panel-history">
+      <div class="panel-header">
+        <div class="panel-title">History</div>
+        <div class="panel-sub">All saved results across sessions, stored in Azure Table Storage.</div>
+      </div>
+      <div id="history-content">
+        <div class="empty-state">
+          <div class="empty-icon">🕑</div>
+          <div class="empty-title">Loading history…</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ENHANCE PANEL -->
+    <div class="panel" id="panel-enhance">
+      <div class="panel-header">
+        <div class="panel-title">Enhance Resume</div>
+        <div class="panel-sub">Already know a candidate is a great fit? Refine their resume to better show it on paper — without changing the facts.</div>
+      </div>
+
+      <!-- JOB DESCRIPTION -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            📄 Job Description
+            <span class="card-badge">required</span>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="jd-toolbar">
+            <select id="enh-jd-saved-select" onchange="loadSavedJobEnhance()">
+              <option value="">Load saved JD…</option>
+            </select>
+          </div>
+          <textarea id="enh-job-desc" rows="6" placeholder="Paste the job description here — the AI will align the resume to these requirements."></textarea>
+        </div>
+      </div>
+
+      <!-- POSITION NOTES -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            🗒️ Position Notes
+            <span class="card-badge">optional</span>
+          </div>
+        </div>
+        <div class="card-body">
+          <textarea id="enh-position-notes" rows="3" placeholder="Client preferences, must-haves, culture fit priorities, or any other context for this role."></textarea>
+        </div>
+      </div>
+
+      <!-- INTERVIEW NOTES -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            🎙️ Interview Notes
+            <span class="card-badge">optional — but recommended</span>
+          </div>
+        </div>
+        <div class="card-body">
+          <textarea id="enh-interview-notes" rows="5" placeholder="What did you learn about this candidate in the interview that their resume doesn't show? E.g. 'Led a team of 8 during a system migration but resume just says team member', 'Has PMP certification, forgot to include it', 'Managed $2M budget in current role', etc."></textarea>
+        </div>
+      </div>
+
+      <!-- RESUME -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            👤 Resume
+            <span class="card-badge">required</span>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="file-drop" id="enhance-drop">
+            <input type="file" id="enhance-file" accept=".txt,.pdf,.doc,.docx" onchange="handleEnhanceFile(event)" />
+            <div class="drop-icon">📎</div>
+            <div class="drop-text"><strong>Click to upload</strong> or drag and drop</div>
+            <div class="drop-hint">Supported: .txt, .pdf, .doc, .docx</div>
+          </div>
+          <div id="enhance-file-display" style="display:none; margin-top:12px;">
+            <div class="file-item">
+              <span class="file-icon">📄</span>
+              <span class="file-name" id="enhance-fname"></span>
+              <span class="file-size" id="enhance-fsize"></span>
+              <button class="file-remove" onclick="clearEnhanceFile()">✕</button>
+            </div>
+            <div style="margin-top:10px;">
+              <div class="field-label">Candidate Name <span style="color:var(--text-dim);font-weight:400;text-transform:none;letter-spacing:0;">(optional override)</span></div>
+              <input type="text" id="enhance-name" placeholder="Auto-detected from resume" style="width:100%;" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SUBMIT -->
+      <div class="submit-row">
+        <button class="btn-enhance" id="enhance-btn" onclick="runEnhancement()">
+          <span id="enh-btn-icon">✨</span>
+          <span id="enh-btn-label">Enhance Resume</span>
+        </button>
+        <button class="btn-clear" onclick="clearEnhanceForm()">Clear</button>
+        <span class="status-msg" id="enh-status-msg"></span>
+      </div>
+
+      <!-- OUTPUT -->
+      <div id="enhance-output" style="display:none;">
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">
+              ✅ Enhancement Summary
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="enhance-summary-block" id="enh-summary"></div>
+            <div class="enhance-changes-grid">
+              <div class="result-section">
+                <div class="rs-title">Changes Made</div>
+                <div class="rs-list" id="enh-changes-list"></div>
+              </div>
+              <div class="result-section">
+                <div class="rs-title">Key Alignments to Role</div>
+                <div class="rs-list" id="enh-alignments-list"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">
+              📄 Enhanced Resume
+              <span class="card-badge">click to edit</span>
+            </div>
+            <div class="enhance-action-row">
+              <button class="btn-email" onclick="openEmailModal('enhance')">✉ Generate Email</button>
+              <button class="btn-secondary" onclick="copyEnhancedResume()">📋 Copy</button>
+              <button class="btn-secondary" onclick="downloadResume('enhance','txt')">⬇️ .txt</button>
+              <button class="btn-secondary" onclick="downloadResume('enhance','pdf')">⬇️ .pdf</button>
+              <button class="btn-secondary" onclick="downloadResume('enhance','docx')">⬇️ .docx</button>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="enhanced-resume-box" id="enh-resume-text" contenteditable="true"></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- GENERATE PANEL -->
+    <div class="panel" id="panel-generate">
+      <div class="panel-header">
+        <div class="panel-title">Generate Resume</div>
+        <div class="panel-sub">Enter a candidate's details and let AI build a fresh, modern resume from scratch — optionally tailored to a specific role.</div>
+      </div>
+
+      <!-- CANDIDATE INFO -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            👤 Candidate Information
+            <span class="card-badge">required</span>
+          </div>
+        </div>
+        <div class="card-body" style="display:flex;flex-direction:column;gap:12px;">
+          <div class="field-group">
+            <div class="field-label">Full Name</div>
+            <input type="text" id="gen-name" placeholder="e.g. Jane Smith" style="width:100%;" />
+          </div>
+          <div class="contact-grid">
+            <div class="field-group">
+              <div class="field-label">Email</div>
+              <input type="text" id="gen-email" placeholder="jane.smith@email.com" />
+            </div>
+            <div class="field-group">
+              <div class="field-label">Phone</div>
+              <input type="text" id="gen-phone" placeholder="(555) 555-5555" />
+            </div>
+            <div class="field-group">
+              <div class="field-label">Location</div>
+              <input type="text" id="gen-location" placeholder="City, State" />
+            </div>
+            <div class="field-group">
+              <div class="field-label">LinkedIn / Portfolio</div>
+              <input type="text" id="gen-linkedin" placeholder="linkedin.com/in/janesmith" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- WORK EXPERIENCE -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            💼 Work Experience
+            <span class="card-badge">required</span>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="work-entries" id="work-entries"></div>
+          <button class="btn-add-entry" onclick="addWorkEntry()">+ Add Position</button>
+        </div>
+      </div>
+
+      <!-- EDUCATION -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            🎓 Education
+            <span class="card-badge">optional</span>
+          </div>
+        </div>
+        <div class="card-body">
+          <textarea id="gen-education" rows="3" placeholder="e.g. B.S. Business Administration — State University, 2015&#10;Associate of Applied Science — Community College, 2013"></textarea>
+        </div>
+      </div>
+
+      <!-- SKILLS -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            🛠️ Skills
+            <span class="card-badge">optional</span>
+          </div>
+        </div>
+        <div class="card-body">
+          <textarea id="gen-skills" rows="2" placeholder="e.g. Project Management, Salesforce CRM, Microsoft Office, OSHA 10, Forklift Certified, Bilingual (English/Spanish)"></textarea>
+        </div>
+      </div>
+
+      <!-- JOB DESCRIPTION (tailoring) -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            📄 Target Job Description
+            <span class="card-badge">optional — for tailoring</span>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="jd-toolbar">
+            <select id="gen-jd-saved-select" onchange="loadSavedJobGenerate()">
+              <option value="">Load saved JD…</option>
+            </select>
+          </div>
+          <textarea id="gen-job-desc" rows="5" placeholder="Paste a job description to tailor the generated resume to a specific role. The AI will emphasize the most relevant experience and incorporate key requirements."></textarea>
+        </div>
+      </div>
+
+      <!-- SUBMIT -->
+      <div class="submit-row">
+        <button class="btn-generate" id="generate-btn" onclick="runGeneration()">
+          <span id="gen-btn-icon">🪄</span>
+          <span id="gen-btn-label">Generate Resume</span>
+        </button>
+        <button class="btn-clear" onclick="clearGenerateForm()">Clear</button>
+        <span class="status-msg" id="gen-status-msg"></span>
+      </div>
+
+      <!-- OUTPUT -->
+      <div id="generate-output" style="display:none;">
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">
+              ✅ Generation Summary
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="generate-summary-block" id="gen-summary"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">
+              📄 Generated Resume
+              <span class="card-badge">click to edit</span>
+            </div>
+            <div class="generate-action-row">
+              <button class="btn-email" onclick="openEmailModal('generate')">✉ Generate Email</button>
+              <button class="btn-secondary" onclick="copyGeneratedResume()">📋 Copy</button>
+              <button class="btn-secondary" onclick="downloadResume('generate','txt')">⬇️ .txt</button>
+              <button class="btn-secondary" onclick="downloadResume('generate','pdf')">⬇️ .pdf</button>
+              <button class="btn-secondary" onclick="downloadResume('generate','docx')">⬇️ .docx</button>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="editable-resume-box" id="gen-resume-text" contenteditable="true"></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ENHANCE HISTORY PANEL -->
+    <div class="panel" id="panel-enhance-history">
+      <div class="panel-header">
+        <div class="panel-title">Enhance History</div>
+        <div class="panel-sub">All saved resume enhancements across sessions.</div>
+      </div>
+      <div id="enhance-history-content">
+        <div class="empty-state">
+          <div class="empty-icon">✨</div>
+          <div class="empty-title">Loading…</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- GENERATE HISTORY PANEL -->
+    <div class="panel" id="panel-generate-history">
+      <div class="panel-header">
+        <div class="panel-title">Generate History</div>
+        <div class="panel-sub">All saved generated resumes across sessions.</div>
+      </div>
+      <div id="generate-history-content">
+        <div class="empty-state">
+          <div class="empty-icon">🪄</div>
+          <div class="empty-title">Loading…</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- INTERVIEW GUIDE PANEL -->
+    <div class="panel" id="panel-interview">
+      <div class="panel-header">
+        <div class="panel-title">Interview Guide</div>
+        <div class="panel-sub">Upload a resume and job description to generate structured interview questions. Take notes inline, get AI follow-ups per question, and wrap up with a fit summary.</div>
+      </div>
+
+      <div class="interview-steps">
+        <div class="interview-step active" id="step-1">Step 1 — Inputs</div>
+        <div class="interview-step" id="step-2">Step 2 — Interview</div>
+        <div class="interview-step" id="step-3">Step 3 — Wrap-Up</div>
+      </div>
+
+      <!-- STEP 1: INPUTS -->
+      <div id="interview-step1">
+
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">📄 Job Description <span class="card-badge">required</span></div>
+          </div>
+          <div class="card-body">
+            <div class="jd-toolbar">
+              <select id="int-jd-saved-select" onchange="loadSavedJobInterview()">
+                <option value="">Load saved JD…</option>
+              </select>
+            </div>
+            <textarea id="int-job-desc" rows="6" placeholder="Paste the full job description here — the more detail, the more targeted the questions."></textarea>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">👤 Candidate Resume <span class="card-badge">required</span></div>
+          </div>
+          <div class="card-body">
+            <div class="file-drop" id="interview-drop">
+              <input type="file" id="interview-file" accept=".txt,.pdf,.doc,.docx" onchange="handleInterviewFile(event)" />
+              <div class="drop-icon">📎</div>
+              <div class="drop-text"><strong>Click to upload</strong> or drag and drop</div>
+              <div class="drop-hint">Supported: .txt, .pdf, .doc, .docx</div>
+            </div>
+            <div id="interview-file-display" style="display:none; margin-top:12px;">
+              <div class="file-item">
+                <span class="file-icon">📄</span>
+                <span class="file-name" id="interview-fname"></span>
+                <span class="file-size" id="interview-fsize"></span>
+                <button class="file-remove" onclick="clearInterviewFile()">✕</button>
+              </div>
+              <div style="margin-top:10px;">
+                <div class="field-label">Candidate Name</div>
+                <input type="text" id="interview-name" placeholder="Auto-detected from resume" style="width:100%;" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="submit-row">
+          <button class="btn-interview" id="interview-gen-btn" onclick="runGenerateQuestions()">
+            <span id="int-gen-icon">🎙️</span>
+            <span id="int-gen-label">Generate Interview Questions</span>
+          </button>
+          <button class="btn-clear" onclick="clearInterviewForm()">Clear</button>
+          <span class="status-msg" id="int-status-msg"></span>
+        </div>
+
+      </div><!-- end #interview-step1 -->
+
+      <!-- STEP 2: INTERVIEW QUESTIONS -->
+      <div id="interview-step2" style="display:none;">
+
+        <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-bottom:16px;">
+          <div>
+            <div style="font-size:14px;font-weight:700;color:var(--text);">Interview: <span id="int-candidate-name-display"></span></div>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">Expand each question to take notes. Use "Get Follow-ups" for deeper probing.</div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn-secondary" onclick="expandAllQuestions()">Expand All</button>
+            <button class="btn-secondary" onclick="collapseAllQuestions()">Collapse All</button>
+            <button class="btn-clear" onclick="resetToStep1()">← Back to Inputs</button>
+          </div>
+        </div>
+
+        <div id="interview-questions-container" style="display:flex;flex-direction:column;gap:14px;"></div>
+
+        <div style="margin-top:20px;">
+          <div class="submit-row">
+            <button class="btn-interview" id="wrapup-btn" onclick="runWrapUp()">
+              <span id="wrapup-icon">📋</span>
+              <span id="wrapup-label">Wrap Up Interview</span>
+            </button>
+            <span class="status-msg" id="wrapup-status-msg"></span>
+          </div>
+          <div style="font-size:11px;color:var(--text-dim);margin-top:6px;">Generates a candidate fit summary based on all your notes. You can add notes first or wrap up at any time.</div>
+        </div>
+
+      </div><!-- end #interview-step2 -->
+
+      <!-- STEP 3: WRAP-UP SUMMARY -->
+      <div id="interview-step3" style="display:none;">
+
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:16px;">
+          <div style="font-size:14px;font-weight:700;color:var(--text);">Interview Summary</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn-secondary" onclick="goBackToStep2()">← Back to Questions</button>
+            <button class="btn-secondary" onclick="saveInterviewSession()">💾 Save to History</button>
+          </div>
+        </div>
+
+        <div class="card" id="wrapup-output-card">
+          <div class="card-header" style="justify-content:space-between;">
+            <div class="card-title">🏁 Candidate Fit Assessment</div>
+            <div id="wrapup-recommendation-badge"></div>
+          </div>
+          <div class="card-body" style="display:flex;flex-direction:column;gap:16px;">
+            <div class="reasoning-block" id="wrapup-fit-assessment"></div>
+            <div class="result-sections">
+              <div class="result-section">
+                <div class="rs-title">Key Strengths</div>
+                <div class="rs-list" id="wrapup-strengths-list"></div>
+              </div>
+              <div class="result-section">
+                <div class="rs-title">Key Risks / Gaps</div>
+                <div class="rs-list" id="wrapup-risks-list"></div>
+              </div>
+            </div>
+            <div>
+              <div class="reasoning-label" style="margin-bottom:6px;">Recommendation Rationale</div>
+              <div class="reasoning-block" id="wrapup-rationale"></div>
+            </div>
+            <div>
+              <div class="reasoning-label" style="margin-bottom:6px;">Detailed Recruiter Notes</div>
+              <div class="reasoning-block" id="wrapup-overall-notes"></div>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- end #interview-step3 -->
+
+    </div><!-- end #panel-interview -->
+
+    <!-- INTERVIEW HISTORY PANEL -->
+    <div class="panel" id="panel-interview-history">
+      <div class="panel-header">
+        <div class="panel-title">Interview History</div>
+        <div class="panel-sub">All saved interview sessions and summaries across sessions.</div>
+      </div>
+      <div id="interview-history-content">
+        <div class="empty-state">
+          <div class="empty-icon">🎙️</div>
+          <div class="empty-title">Loading…</div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- EMAIL MODAL -->
+<div class="modal-overlay" id="email-modal" onclick="handleModalOverlayClick(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">✉ Generate Email</div>
+      <button class="modal-close" onclick="closeEmailModal()">✕</button>
+    </div>
+    <div class="modal-body" id="email-modal-body">
+      <div class="modal-loading">
+        <div class="spinner-dark"></div>
+        Generating email…
+      </div>
+    </div>
+    <div class="modal-footer" id="email-modal-footer" style="display:none;">
+      <button class="btn-email" onclick="copyEmail()">📋 Copy Email</button>
+      <button class="btn-clear" onclick="closeEmailModal()">Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+// ============================================================
+//  STATE
+// ============================================================
+let config = {
+  url: 'https://resume-review-fn-bydkf6hrgvaadwcj.centralus-01.azurewebsites.net/api/analyze',
+  enhanceUrl: 'https://resume-review-fn-bydkf6hrgvaadwcj.centralus-01.azurewebsites.net/api/enhance',
+  generateUrl: 'https://resume-review-fn-bydkf6hrgvaadwcj.centralus-01.azurewebsites.net/api/generate',
+  emailUrl: 'https://resume-review-fn-bydkf6hrgvaadwcj.centralus-01.azurewebsites.net/api/email',
+  interviewUrl: 'https://resume-review-fn-bydkf6hrgvaadwcj.centralus-01.azurewebsites.net/api/interview',
+  key: ''
+};
+
+// ============================================================
+//  AZURE TABLE STORAGE
+// ============================================================
+const STORAGE = {
+  account: 'resumereviewstorageeb',
+  sas: 'sv=2024-11-04&ss=bfqt&srt=sco&sp=rwdlacupiytfx&se=2029-03-18T04:24:58Z' +
+       '&st=2026-03-17T20:09:58Z&spr=https' +
+       '&sig=uCA0xyX58r518bGqCFhRkT4AAIDpn8sLZsa1Ee78nt8%3D',
+  base() { return `https://${this.account}.table.core.windows.net`; },
+};
+
+const AzureTable = {
+  url(table, suffix = '') {
+    return `${STORAGE.base()}/${table}${suffix}?${STORAGE.sas}`;
+  },
+
+  async createTable(name) {
+    try {
+      await fetch(`${STORAGE.base()}/Tables?${STORAGE.sas}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({ TableName: name }),
+      });
+    } catch(e) { /* ignore — table may already exist */ }
+  },
+
+  async insert(table, entity) {
+    const res = await fetch(this.url(table), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json;odata=nometadata',
+      },
+      body: JSON.stringify(entity),
+    });
+    if (!res.ok) throw new Error(`Storage insert failed: ${res.status}`);
+    return res.json();
+  },
+
+  async query(table, filter = '') {
+    let url = this.url(table);
+    if (filter) url += `&$filter=${encodeURIComponent(filter)}`;
+    const res = await fetch(url, {
+      headers: { 'Accept': 'application/json;odata=nometadata' },
+    });
+    if (!res.ok) throw new Error(`Storage query failed: ${res.status}`);
+    const data = await res.json();
+    return (data.value || []).reverse(); // newest first
+  },
+
+  async remove(table, partitionKey, rowKey) {
+    const suffix = `(PartitionKey='${encodeURIComponent(partitionKey)}',RowKey='${encodeURIComponent(rowKey)}')`;
+    const res = await fetch(`${STORAGE.base()}/${table}${suffix}?${STORAGE.sas}`, {
+      method: 'DELETE',
+      headers: { 'If-Match': '*' },
+    });
+    if (!res.ok && res.status !== 404) throw new Error(`Storage delete failed: ${res.status}`);
+  },
+};
+
+async function initStorage() {
+  await Promise.all([
+    AzureTable.createTable('SavedJobs'),
+    AzureTable.createTable('Results'),
+    AzureTable.createTable('EnhanceHistory'),
+    AzureTable.createTable('GenerateHistory'),
+    AzureTable.createTable('InterviewHistory'),
+  ]);
+  loadSavedJobs();
+  loadSavedJobsEnhance();
+  loadSavedJobsGenerate();
+}
+
+// -- Saved Job Descriptions --
+async function saveJobDescription() {
+  const desc = document.getElementById('job-desc').value.trim();
+  if (!desc) { showToast('Enter a job description first.', 'error'); return; }
+  const titleInput = document.getElementById('jd-save-title').value.trim();
+  const title = titleInput || desc.substring(0, 60);
+  try {
+    await AzureTable.insert('SavedJobs', {
+      PartitionKey: 'jobs',
+      RowKey: Date.now().toString(),
+      Title: title,
+      Description: desc,
+      Notes: document.getElementById('position-notes').value.trim(),
+      CreatedAt: new Date().toISOString(),
+    });
+    document.getElementById('jd-save-title').value = '';
+    showToast('Job description saved.', 'success');
+    loadSavedJobs();
+  } catch(e) {
+    showToast('Save failed: ' + e.message, 'error');
+  }
+}
+
+async function loadSavedJobs() {
+  try {
+    const rows = await AzureTable.query('SavedJobs', "PartitionKey eq 'jobs'");
+    const selectors = ['jd-saved-select', 'enh-jd-saved-select', 'gen-jd-saved-select'];
+    selectors.forEach(id => {
+      const sel = document.getElementById(id);
+      if (!sel) return;
+      sel.innerHTML = '<option value="">Load saved JD…</option>' +
+        rows.map(r => `<option value="${escHtml(r.RowKey)}">${escHtml(r.Title)}</option>`).join('');
+    });
+  } catch(e) { /* silently ignore */ }
+}
+
+async function loadSavedJob() {
+  const sel = document.getElementById('jd-saved-select');
+  const rowKey = sel.value;
+  if (!rowKey) return;
+  try {
+    const rows = await AzureTable.query('SavedJobs',
+      `PartitionKey eq 'jobs' and RowKey eq '${rowKey}'`);
+    if (!rows.length) return;
+    const r = rows[0];
+    document.getElementById('job-desc').value = r.Description || '';
+    document.getElementById('position-notes').value = r.Notes || '';
+    sel.value = '';
+    showToast(`Loaded: ${r.Title}`, 'success');
+  } catch(e) {
+    showToast('Load failed: ' + e.message, 'error');
+  }
+}
+
+// -- Auto-save results --
+async function autoSaveResult(result, jobSnippet) {
+  if (result.error) return;
+  try {
+    await AzureTable.insert('Results', {
+      PartitionKey: 'results',
+      RowKey: Date.now().toString() + Math.random().toString(36).slice(2, 6),
+      CandidateName: result.candidateName || 'Unknown',
+      JobSnippet: jobSnippet.substring(0, 120),
+      Category: result.category || '',
+      FitScore: result.fitScore ?? null,
+      Confidence: result.confidence || '',
+      Summary: (result.summary || '').substring(0, 500),
+      ResultJson: JSON.stringify(result),
+      CreatedAt: new Date().toISOString(),
+    });
+  } catch(e) { /* best-effort */ }
+}
+
+// -- History panel --
+let historyRows = [];
+
+async function loadHistory() {
+  const container = document.getElementById('history-content');
+  container.innerHTML = '<div class="loading-msg">Loading…</div>';
+  try {
+    historyRows = await AzureTable.query('Results');
+    renderHistory();
+  } catch(e) {
+    container.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div>
+      <div class="empty-title">Could not load history</div>
+      <div class="empty-sub">${escHtml(e.message)}</div></div>`;
+  }
+}
+
+function renderHistory() {
+  const container = document.getElementById('history-content');
+  if (!historyRows.length) {
+    container.innerHTML = `<div class="empty-state"><div class="empty-icon">🕑</div>
+      <div class="empty-title">No history yet</div>
+      <div class="empty-sub">Results are automatically saved after each analysis.</div></div>`;
+    return;
+  }
+  container.innerHTML = `
+    <div class="results-toolbar" style="margin-bottom:12px;">
+      <span style="font-size:13px;color:var(--text-muted)">${historyRows.length} saved result${historyRows.length !== 1 ? 's' : ''}</span>
+      <button class="filter-btn" onclick="clearHistory()" style="margin-left:auto;">Clear All</button>
+    </div>
+    <div class="results-grid">
+      ${historyRows.map(r => renderHistoryCard(r)).join('')}
+    </div>`;
+}
+
+function renderHistoryCard(r) {
+  const cat = (r.Category || '').toLowerCase();
+  const catLabel = r.Category === 'VIABLE' ? '✓ Viable'
+                 : r.Category === 'REVIEW' ? '⚠ Review'
+                 : r.Category === 'REJECT' ? '✕ Reject' : r.Category;
+  const date = r.CreatedAt
+    ? new Date(r.CreatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    : '';
+  const uid = 'h-' + r.RowKey;
+  let body = '';
+  try {
+    const result = JSON.parse(r.ResultJson || '{}');
+    body = `
+      <div class="result-sections">
+        <div class="result-section">
+          <div class="rs-title">Strengths</div>
+          <div class="rs-list">${(result.strengths || []).length
+            ? result.strengths.map(s => `<div class="rs-item">${escHtml(s)}</div>`).join('')
+            : '<div class="rs-empty">None noted</div>'}</div>
+        </div>
+        <div class="result-section">
+          <div class="rs-title">Concerns</div>
+          <div class="rs-list">${(result.concerns || []).length
+            ? result.concerns.map(s => `<div class="rs-item">${escHtml(s)}</div>`).join('')
+            : '<div class="rs-empty">None noted</div>'}</div>
+        </div>
+        ${(result.followUpItems || []).length ? `
+        <div class="result-section" style="grid-column:1/-1;">
+          <div class="rs-title">Follow-up Items</div>
+          <div class="rs-list">${result.followUpItems.map(s => `<div class="rs-item">${escHtml(s)}</div>`).join('')}</div>
+        </div>` : ''}
+      </div>
+      <div class="reasoning-block">
+        <div class="reasoning-label">AI Reasoning</div>
+        ${escHtml(result.reasoning || '')}
+      </div>`;
+  } catch(e) { body = '<div class="rs-empty">Could not parse stored result.</div>'; }
+
+  return `
+    <div class="result-card ${cat}" id="${uid}">
+      <div class="result-header" onclick="toggleResult('${uid}')">
+        <div class="result-left">
+          <span class="verdict-badge ${cat}">${catLabel}</span>
+          <div style="flex:1;min-width:0;">
+            <div class="result-name">${escHtml(r.CandidateName || 'Unknown')}</div>
+            <div class="result-summary">${escHtml(r.JobSnippet || '')}
+              <span style="color:var(--text-dim);font-size:11px;margin-left:6px;">${date}</span></div>
+          </div>
+        </div>
+        <div class="result-meta">
+          <div class="fit-score">
+            <div class="fit-score-num ${cat}">${r.FitScore ?? '--'}</div>
+            <div class="fit-score-label">Fit Score</div>
+          </div>
+          <span class="confidence-tag">${r.Confidence || ''}</span>
+          <button class="file-remove" style="margin-left:8px;"
+            onclick="event.stopPropagation();deleteHistoryRow('${escHtml(r.RowKey)}')">✕</button>
+          <span class="chevron" id="chev-${uid}">▼</span>
+        </div>
+      </div>
+      <div class="result-body" id="body-${uid}">${body}</div>
+    </div>`;
+}
+
+async function deleteHistoryRow(rowKey) {
+  if (!confirm('Delete this result from history?')) return;
+  try {
+    await AzureTable.remove('Results', 'results', rowKey);
+    historyRows = historyRows.filter(r => r.RowKey !== rowKey);
+    renderHistory();
+  } catch(e) {
+    showToast('Delete failed: ' + e.message, 'error');
+  }
+}
+
+async function clearHistory() {
+  if (!confirm('Delete all history? This cannot be undone.')) return;
+  try {
+    await Promise.all(historyRows.map(r => AzureTable.remove('Results', 'results', r.RowKey)));
+    historyRows = [];
+    renderHistory();
+    showToast('History cleared.', 'success');
+  } catch(e) {
+    showToast('Clear failed: ' + e.message, 'error');
+  }
+}
+
+let currentMode = 'single';
+let singleFileData = null;
+let batchFilesData = [];
+let results = [];
+let activeFilter = 'all';
+
+// ============================================================
+//  INIT
+// ============================================================
+window.addEventListener('DOMContentLoaded', () => {
+  setupDragDrop('single-drop', handleDropSingle);
+  setupDragDrop('batch-drop', handleDropBatch);
+  setupDragDrop('enhance-drop', handleDropEnhance);
+  setupDragDrop('interview-drop', handleDropInterview);
+  addWorkEntry(); // start with one blank work entry
+  initStorage();
+});
+
+// ============================================================
+//  NAVIGATION
+// ============================================================
+function showPanel(name) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('panel-' + name).classList.add('active');
+  document.getElementById('nav-' + name).classList.add('active');
+  if (name === 'history') loadHistory();
+  if (name === 'enhance') loadSavedJobsEnhance();
+  if (name === 'generate') loadSavedJobsGenerate();
+  if (name === 'enhance-history') loadEnhanceHistory();
+  if (name === 'generate-history') loadGenerateHistory();
+  if (name === 'interview') loadSavedJobsInterview();
+  if (name === 'interview-history') loadInterviewHistory();
+}
+
+// ============================================================
+//  MODE
+// ============================================================
+function setMode(mode) {
+  currentMode = mode;
+  document.getElementById('single-mode').style.display = mode === 'single' ? 'block' : 'none';
+  document.getElementById('batch-mode').style.display = mode === 'batch' ? 'block' : 'none';
+  document.getElementById('mode-single').classList.toggle('active', mode === 'single');
+  document.getElementById('mode-batch').classList.toggle('active', mode === 'batch');
+}
+
+// ============================================================
+//  FILE HANDLING
+// ============================================================
+function setupDragDrop(id, handler) {
+  const el = document.getElementById(id);
+  el.addEventListener('dragover', e => { e.preventDefault(); el.classList.add('dragover'); });
+  el.addEventListener('dragleave', () => el.classList.remove('dragover'));
+  el.addEventListener('drop', e => {
+    e.preventDefault();
+    el.classList.remove('dragover');
+    handler(e.dataTransfer.files);
+  });
+}
+
+function handleDropSingle(files) {
+  if (files.length > 0) processFile(files[0]).then(data => { singleFileData = data; showSingleFile(files[0]); });
+}
+function handleDropBatch(files) {
+  Array.from(files).forEach(f => processFile(f).then(data => addBatchFile(f, data)));
+}
+
+function handleSingleFile(e) {
+  const f = e.target.files[0];
+  if (!f) return;
+  processFile(f).then(data => { singleFileData = data; showSingleFile(f); });
+}
+function handleBatchFiles(e) {
+  Array.from(e.target.files).forEach(f => processFile(f).then(data => addBatchFile(f, data)));
+}
+
+function showSingleFile(file) {
+  document.getElementById('single-file-display').style.display = 'block';
+  document.getElementById('single-fname').textContent = file.name;
+  document.getElementById('single-fsize').textContent = formatSize(file.size);
+}
+
+function clearSingleFile() {
+  singleFileData = null;
+  document.getElementById('single-file-display').style.display = 'none';
+  document.getElementById('single-file').value = '';
+  document.getElementById('single-name').value = '';
+}
+
+function addBatchFile(file, data) {
+  const id = Date.now() + Math.random();
+  batchFilesData.push({ id, name: file.name, data });
+  renderBatchList();
+}
+
+function removeBatchFile(id) {
+  batchFilesData = batchFilesData.filter(f => f.id !== id);
+  renderBatchList();
+}
+
+function renderBatchList() {
+  const list = document.getElementById('batch-file-list');
+  list.innerHTML = batchFilesData.map(f => `
+    <div class="file-item">
+      <span class="file-icon">📄</span>
+      <span class="file-name">${escHtml(f.name)}</span>
+      <button class="file-remove" onclick="removeBatchFile(${f.id})">✕</button>
+    </div>
+  `).join('');
+}
+
+async function processFile(file) {
+  const name = file.name.toLowerCase();
+  if (name.endsWith('.pdf')) return extractPdfText(file);
+  if (name.endsWith('.docx')) return extractDocxText(file);
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = e => resolve(e.target.result);
+    reader.readAsText(file);
+  });
+}
+
+async function extractDocxText(file) {
+  const arrayBuffer = await file.arrayBuffer();
+  const result = await mammoth.extractRawText({ arrayBuffer });
+  return result.value;
+}
+
+async function extractPdfText(file) {
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  const pageTexts = [];
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const textContent = await page.getTextContent();
+    pageTexts.push(textContent.items.map(item => item.str).join(' '));
+  }
+  return pageTexts.join('\n');
+}
+
+// ============================================================
+//  ANALYSIS
+// ============================================================
+async function runAnalysis() {
+  const jobDesc = document.getElementById('job-desc').value.trim();
+  if (!jobDesc) { showToast('Please enter a job description.', 'error'); return; }
+
+  const positionNotes = document.getElementById('position-notes').value.trim();
+
+  let queue = [];
+  if (currentMode === 'single') {
+    if (!singleFileData) { showToast('Please upload a resume file.', 'error'); return; }
+    const name = document.getElementById('single-name').value.trim() || inferName(singleFileData);
+    queue.push({ name, text: singleFileData });
+  } else {
+    if (batchFilesData.length === 0) { showToast('Please upload at least one resume file.', 'error'); return; }
+    queue = batchFilesData.map(f => ({ name: inferNameFromFilename(f.name), text: f.data }));
+  }
+
+  setRunning(true);
+  showProgress(0, queue.length);
+
+  const sessionResults = [];
+
+  for (let i = 0; i < queue.length; i++) {
+    updateProgress(i, queue.length, queue[i].name);
+    try {
+      const result = await callProxy(jobDesc, positionNotes, queue[i].text, queue[i].name);
+      result.candidateName = queue[i].name;
+      result.fileName = currentMode === 'batch' ? batchFilesData[i]?.name : document.getElementById('single-fname').textContent;
+      result._jobDesc = jobDesc;
+      result._resumeText = queue[i].text;
+      sessionResults.push(result);
+      autoSaveResult(result, jobDesc);
+    } catch (err) {
+      sessionResults.push({
+        candidateName: queue[i].name,
+        error: err.message,
+        category: 'ERROR',
+      });
+    }
+    updateProgress(i + 1, queue.length, queue[i].name);
+  }
+
+  results = [...sessionResults, ...results];
+  updateResultsCount();
+  renderResults();
+  setRunning(false);
+  hideProgress();
+  showToast(`Analysis complete. ${sessionResults.length} resume${sessionResults.length !== 1 ? 's' : ''} reviewed.`, 'success');
+  showPanel('results');
+}
+
+async function callProxy(jobDescription, positionNotes, resumeText, candidateName) {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const response = await fetch(config.url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-functions-key': config.key,
+      },
+      body: JSON.stringify({ jobDescription, positionNotes, resumeText, candidateName }),
+    });
+
+    if (response.status === 429) {
+      if (attempt < 3) {
+        await new Promise(r => setTimeout(r, attempt * 3000));
+        continue;
+      }
+      throw new Error('Rate limit exceeded — too many requests. Please wait a moment and retry.');
+    }
+
+    if (response.status >= 500) {
+      if (attempt < 3) {
+        await new Promise(r => setTimeout(r, attempt * 2000));
+        continue;
+      }
+      throw new Error('The server encountered an error — please try again.');
+    }
+
+    if (!response.ok) {
+      const errBody = await response.text();
+      throw new Error(`Server error ${response.status}: ${errBody}`);
+    }
+
+    return await response.json();
+  }
+}
+
+// ============================================================
+//  RESULTS
+// ============================================================
+function renderResults() {
+  const container = document.getElementById('results-content');
+
+  if (results.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">🔍</div>
+        <div class="empty-title">No results yet</div>
+        <div class="empty-sub">Run an analysis from the Review Candidates panel to see assessments here.</div>
+      </div>`;
+    return;
+  }
+
+  const filtered = activeFilter === 'all' ? results : results.filter(r => (r.category || '').toLowerCase() === activeFilter);
+
+  const viable = results.filter(r => r.category === 'VIABLE').length;
+  const review = results.filter(r => r.category === 'REVIEW').length;
+  const reject = results.filter(r => r.category === 'REJECT').length;
+
+  container.innerHTML = `
+    <div class="results-summary-row">
+      <div class="summary-stat">
+        <div class="summary-stat-num viable">${viable}</div>
+        <div class="summary-stat-label">Viable<br>Candidates</div>
+      </div>
+      <div class="summary-stat">
+        <div class="summary-stat-num review">${review}</div>
+        <div class="summary-stat-label">Needs<br>Review</div>
+      </div>
+      <div class="summary-stat">
+        <div class="summary-stat-num reject">${reject}</div>
+        <div class="summary-stat-label">Not<br>a Fit</div>
+      </div>
+      <div class="summary-stat">
+        <div class="summary-stat-num" style="color:var(--text-muted)">${results.length}</div>
+        <div class="summary-stat-label">Total<br>Reviewed</div>
+      </div>
+    </div>
+
+    <div class="results-toolbar" style="margin-top:4px;">
+      <button class="filter-btn ${activeFilter==='all'?'active all':''}" onclick="setFilter('all')">All (${results.length})</button>
+      <button class="filter-btn ${activeFilter==='viable'?'active viable':''}" onclick="setFilter('viable')">✓ Viable (${viable})</button>
+      <button class="filter-btn ${activeFilter==='review'?'active review':''}" onclick="setFilter('review')">⚠ Review (${review})</button>
+      <button class="filter-btn ${activeFilter==='reject'?'active reject':''}" onclick="setFilter('reject')">✕ Reject (${reject})</button>
+      <button class="filter-btn" onclick="clearResults()" style="margin-left:auto;">Clear All</button>
+    </div>
+
+    <div class="results-grid" id="results-grid">
+      ${filtered.length === 0 ? '<div class="empty-state" style="padding:40px 20px;"><div class="empty-icon">🔎</div><div class="empty-title">No results match this filter</div></div>' : filtered.map((r, i) => renderResultCard(r, i)).join('')}
+    </div>
+  `;
+}
+
+function renderResultCard(r, i) {
+  if (r.error) {
+    return `
+      <div class="result-card reject">
+        <div class="result-header">
+          <div class="result-left">
+            <span class="verdict-badge reject">ERROR</span>
+            <span class="result-name">${escHtml(r.candidateName || 'Unknown')}</span>
+            <span class="result-summary">${escHtml(r.error)}</span>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  const cat = (r.category || '').toLowerCase();
+  const catLabel = r.category === 'VIABLE' ? '✓ Viable' : r.category === 'REVIEW' ? '⚠ Review' : '✕ Reject';
+  const uid = `result-${i}-${Date.now()}`;
+
+  return `
+    <div class="result-card ${cat}" id="${uid}">
+      <div class="result-header" onclick="toggleResult('${uid}')">
+        <div class="result-left">
+          <span class="verdict-badge ${cat}">${catLabel}</span>
+          <div style="flex:1;min-width:0;">
+            <div class="result-name">${escHtml(r.candidateName || 'Unknown')}</div>
+            <div class="result-summary">${escHtml(r.summary || '')}</div>
+          </div>
+        </div>
+        <div class="result-meta">
+          <div class="fit-score">
+            <div class="fit-score-num ${cat}">${r.fitScore ?? '--'}</div>
+            <div class="fit-score-label">Fit Score</div>
+          </div>
+          <span class="confidence-tag">${r.confidence || ''}</span>
+          <span class="chevron" id="chev-${uid}">▼</span>
+        </div>
+      </div>
+      <div class="result-body" id="body-${uid}">
+        <div class="result-sections">
+          <div class="result-section">
+            <div class="rs-title">Strengths</div>
+            <div class="rs-list">
+              ${(r.strengths || []).length > 0
+                ? (r.strengths || []).map(s => `<div class="rs-item">${escHtml(s)}</div>`).join('')
+                : '<div class="rs-empty">None noted</div>'}
+            </div>
+          </div>
+          <div class="result-section">
+            <div class="rs-title">Concerns</div>
+            <div class="rs-list">
+              ${(r.concerns || []).length > 0
+                ? (r.concerns || []).map(s => `<div class="rs-item">${escHtml(s)}</div>`).join('')
+                : '<div class="rs-empty">None noted</div>'}
+            </div>
+          </div>
+          ${(r.followUpItems || []).length > 0 ? `
+          <div class="result-section" style="grid-column:1/-1;">
+            <div class="rs-title">Follow-up Items</div>
+            <div class="rs-list">
+              ${r.followUpItems.map(s => `<div class="rs-item">${escHtml(s)}</div>`).join('')}
+            </div>
+          </div>` : ''}
+        </div>
+        <div class="reasoning-block">
+          <div class="reasoning-label">AI Reasoning</div>
+          ${escHtml(r.reasoning || '')}
+        </div>
+        <div style="margin-top:14px;">
+          <button class="btn-email" onclick="openEmailModalForResult(${i})">✉ Generate Candidate Email</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function toggleResult(uid) {
+  const body = document.getElementById('body-' + uid);
+  const chev = document.getElementById('chev-' + uid);
+  body.classList.toggle('open');
+  chev.classList.toggle('open');
+}
+
+function setFilter(f) {
+  activeFilter = f;
+  renderResults();
+}
+
+function clearResults() {
+  if (!confirm('Clear all results from this session?')) return;
+  results = [];
+  activeFilter = 'all';
+  updateResultsCount();
+  renderResults();
+}
+
+function updateResultsCount() {
+  const el = document.getElementById('results-count');
+  el.textContent = results.length;
+  el.classList.toggle('has-results', results.length > 0);
+}
+
+// ============================================================
+//  PROGRESS / UI STATE
+// ============================================================
+function setRunning(running) {
+  const btn = document.getElementById('analyze-btn');
+  const icon = document.getElementById('btn-icon');
+  const label = document.getElementById('btn-label');
+  btn.disabled = running;
+  if (running) {
+    icon.outerHTML = '<span class="spinner" id="btn-icon"></span>';
+    label.textContent = 'Analyzing...';
+  } else {
+    document.getElementById('btn-icon').outerHTML = '<span id="btn-icon">⚡</span>';
+    label.textContent = 'Analyze';
+  }
+}
+
+function showProgress(done, total) {
+  document.getElementById('progress-wrap').classList.add('visible');
+  updateProgress(done, total, '');
+}
+
+function updateProgress(done, total, name) {
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  document.getElementById('progress-bar').style.width = pct + '%';
+  document.getElementById('progress-frac').textContent = `${done} / ${total}`;
+  document.getElementById('progress-text').textContent = done < total ? `Analyzing: ${name}` : 'Complete';
+}
+
+function hideProgress() {
+  setTimeout(() => document.getElementById('progress-wrap').classList.remove('visible'), 1000);
+}
+
+// ============================================================
+//  UTILITIES
+// ============================================================
+function clearAll() {
+  document.getElementById('job-desc').value = '';
+  document.getElementById('position-notes').value = '';
+  clearSingleFile();
+  batchFilesData = [];
+  renderBatchList();
+  document.getElementById('single-file').value = '';
+  document.getElementById('batch-files').value = '';
+}
+
+function inferName(text) {
+  const lines = (text || '').split('\n').slice(0, 5).map(l => l.trim()).filter(Boolean);
+  return lines[0] || 'Candidate';
+}
+
+function inferNameFromFilename(filename) {
+  return filename.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ');
+}
+
+function formatSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / 1048576).toFixed(1) + ' MB';
+}
+
+function escHtml(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function showToast(msg, type = '') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast ' + type;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3500);
+}
+
+// ============================================================
+//  ENHANCE FEATURE
+// ============================================================
+let enhanceFileData = null;
+let enhancementResult = null;
+
+async function loadSavedJobsEnhance() {
+  try {
+    const rows = await AzureTable.query('SavedJobs', "PartitionKey eq 'jobs'");
+    const sel = document.getElementById('enh-jd-saved-select');
+    if (!sel) return;
+    sel.innerHTML = '<option value="">Load saved JD…</option>' +
+      rows.map(r => `<option value="${escHtml(r.RowKey)}">${escHtml(r.Title)}</option>`).join('');
+  } catch(e) { /* silently ignore */ }
+}
+
+async function loadSavedJobEnhance() {
+  const sel = document.getElementById('enh-jd-saved-select');
+  const rowKey = sel.value;
+  if (!rowKey) return;
+  try {
+    const rows = await AzureTable.query('SavedJobs',
+      `PartitionKey eq 'jobs' and RowKey eq '${rowKey}'`);
+    if (!rows.length) return;
+    const r = rows[0];
+    document.getElementById('enh-job-desc').value = r.Description || '';
+    document.getElementById('enh-position-notes').value = r.Notes || '';
+    sel.value = '';
+    showToast(`Loaded: ${r.Title}`, 'success');
+  } catch(e) {
+    showToast('Load failed: ' + e.message, 'error');
+  }
+}
+
+function handleEnhanceFile(e) {
+  const f = e.target.files[0];
+  if (!f) return;
+  processFile(f).then(data => { enhanceFileData = data; showEnhanceFile(f); });
+}
+
+function handleDropEnhance(files) {
+  if (files.length > 0) processFile(files[0]).then(data => { enhanceFileData = data; showEnhanceFile(files[0]); });
+}
+
+function showEnhanceFile(file) {
+  document.getElementById('enhance-file-display').style.display = 'block';
+  document.getElementById('enhance-fname').textContent = file.name;
+  document.getElementById('enhance-fsize').textContent = formatSize(file.size);
+}
+
+function clearEnhanceFile() {
+  enhanceFileData = null;
+  document.getElementById('enhance-file-display').style.display = 'none';
+  document.getElementById('enhance-file').value = '';
+  document.getElementById('enhance-name').value = '';
+}
+
+function clearEnhanceForm() {
+  document.getElementById('enh-job-desc').value = '';
+  document.getElementById('enh-position-notes').value = '';
+  document.getElementById('enh-interview-notes').value = '';
+  clearEnhanceFile();
+  document.getElementById('enhance-output').style.display = 'none';
+  enhancementResult = null;
+}
+
+async function runEnhancement() {
+  const jobDesc = document.getElementById('enh-job-desc').value.trim();
+  if (!jobDesc) { showToast('Please enter a job description.', 'error'); return; }
+  if (!enhanceFileData) { showToast('Please upload a resume file.', 'error'); return; }
+
+  const positionNotes = document.getElementById('enh-position-notes').value.trim();
+  const interviewNotes = document.getElementById('enh-interview-notes').value.trim();
+  const candidateName = document.getElementById('enhance-name').value.trim()
+    || inferName(enhanceFileData);
+
+  setEnhanceRunning(true);
+  document.getElementById('enh-status-msg').textContent = '';
+  document.getElementById('enhance-output').style.display = 'none';
+
+  try {
+    const result = await callEnhanceProxy(jobDesc, positionNotes, interviewNotes, enhanceFileData, candidateName);
+    enhancementResult = result;
+    enhancementResult.candidateName = candidateName;
+    enhancementResult._jobDesc = jobDesc;
+    renderEnhanceResult(result, candidateName);
+    autoSaveEnhanceResult(result, candidateName, jobDesc);
+    showToast('Resume enhanced successfully.', 'success');
+  } catch(err) {
+    document.getElementById('enh-status-msg').textContent = err.message;
+    document.getElementById('enh-status-msg').className = 'status-msg error';
+    showToast('Enhancement failed: ' + err.message, 'error');
+  } finally {
+    setEnhanceRunning(false);
+  }
+}
+
+async function callEnhanceProxy(jobDescription, positionNotes, interviewNotes, resumeText, candidateName) {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const response = await fetch(config.enhanceUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-functions-key': config.key,
+      },
+      body: JSON.stringify({ jobDescription, positionNotes, interviewNotes, resumeText, candidateName }),
+    });
+
+    if (response.status === 429) {
+      if (attempt < 3) {
+        await new Promise(r => setTimeout(r, attempt * 3000));
+        continue;
+      }
+      throw new Error('Rate limit exceeded — too many requests. Please wait a moment and retry.');
+    }
+
+    if (response.status >= 500) {
+      if (attempt < 3) {
+        await new Promise(r => setTimeout(r, attempt * 2000));
+        continue;
+      }
+      throw new Error('The server encountered an error — please try again.');
+    }
+
+    if (!response.ok) {
+      const errBody = await response.text();
+      throw new Error(`Server error ${response.status}: ${errBody}`);
+    }
+
+    return await response.json();
+  }
+}
+
+function renderEnhanceResult(result, candidateName) {
+  document.getElementById('enh-summary').textContent = result.summary || '';
+
+  const changesList = document.getElementById('enh-changes-list');
+  changesList.innerHTML = (result.changes || []).length > 0
+    ? result.changes.map(c => `<div class="rs-item">${escHtml(c)}</div>`).join('')
+    : '<div class="rs-empty">No specific changes noted.</div>';
+
+  const alignList = document.getElementById('enh-alignments-list');
+  alignList.innerHTML = (result.keyAlignments || []).length > 0
+    ? result.keyAlignments.map(a => `<div class="rs-item">${escHtml(a)}</div>`).join('')
+    : '<div class="rs-empty">No alignments noted.</div>';
+
+  document.getElementById('enh-resume-text').textContent = result.enhancedResume || '';
+
+  document.getElementById('enhance-output').style.display = 'block';
+  document.getElementById('enhance-output').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function setEnhanceRunning(running) {
+  const btn = document.getElementById('enhance-btn');
+  const icon = document.getElementById('enh-btn-icon');
+  const label = document.getElementById('enh-btn-label');
+  btn.disabled = running;
+  if (running) {
+    icon.outerHTML = '<span class="spinner" id="enh-btn-icon"></span>';
+    label.textContent = 'Enhancing...';
+  } else {
+    document.getElementById('enh-btn-icon').outerHTML = '<span id="enh-btn-icon">✨</span>';
+    label.textContent = 'Enhance Resume';
+  }
+}
+
+function copyEnhancedResume() {
+  const text = document.getElementById('enh-resume-text').innerText;
+  if (!text) return;
+  navigator.clipboard.writeText(text)
+    .then(() => showToast('Copied to clipboard.', 'success'))
+    .catch(() => showToast('Copy failed — please select and copy manually.', 'error'));
+}
+
+// ============================================================
+//  GENERATE FEATURE
+// ============================================================
+let workEntries = [];
+let generationResult = null;
+
+function saveWorkEntryValues() {
+  document.querySelectorAll('#work-entries .work-entry').forEach(el => {
+    const id = parseFloat(el.dataset.id);
+    const entry = workEntries.find(e => e.id === id);
+    if (entry) {
+      entry.company = el.querySelector('.we-company')?.value || '';
+      entry.title = el.querySelector('.we-title')?.value || '';
+      entry.startDate = el.querySelector('.we-start')?.value || '';
+      entry.endDate = el.querySelector('.we-end')?.value || '';
+      entry.responsibilities = el.querySelector('.we-resp')?.value || '';
+    }
+  });
+}
+
+function addWorkEntry() {
+  saveWorkEntryValues();
+  const id = Date.now() + Math.random();
+  workEntries.push({ id });
+  renderWorkEntries();
+}
+
+function removeWorkEntry(id) {
+  saveWorkEntryValues();
+  workEntries = workEntries.filter(e => e.id !== id);
+  renderWorkEntries();
+}
+
+function renderWorkEntries() {
+  const container = document.getElementById('work-entries');
+  if (workEntries.length === 0) {
+    container.innerHTML = '<div class="rs-empty" style="padding:12px 0;">No positions added yet. Click "+ Add Position" below.</div>';
+    return;
+  }
+  container.innerHTML = workEntries.map((entry, idx) => `
+    <div class="work-entry" data-id="${entry.id}">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">
+        <div class="field-label" style="margin:0;">Position ${idx + 1}</div>
+        <button class="btn-remove-entry" onclick="removeWorkEntry(${entry.id})" title="Remove this position">✕ Remove</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <div class="field-group">
+          <div class="field-label">Company</div>
+          <input type="text" class="we-company" placeholder="Company Name" style="width:100%;" value="${escHtml(entry.company || '')}" />
+        </div>
+        <div class="field-group">
+          <div class="field-label">Job Title</div>
+          <input type="text" class="we-title" placeholder="e.g. Senior Recruiter" style="width:100%;" value="${escHtml(entry.title || '')}" />
+        </div>
+        <div class="field-group">
+          <div class="field-label">Start Date</div>
+          <input type="text" class="we-start" placeholder="e.g. Jan 2020" style="width:100%;" value="${escHtml(entry.startDate || '')}" />
+        </div>
+        <div class="field-group">
+          <div class="field-label">End Date</div>
+          <input type="text" class="we-end" placeholder="e.g. Mar 2024 or Present" style="width:100%;" value="${escHtml(entry.endDate || '')}" />
+        </div>
+      </div>
+      <div class="field-group">
+        <div class="field-label">Key Responsibilities &amp; Accomplishments</div>
+        <textarea class="we-resp" rows="3" placeholder="Describe what this person did — the more detail, the better the resume. E.g. 'Managed full-cycle recruiting for manufacturing roles, hired 200+ candidates per year, reduced time-to-fill by 30%'">${escHtml(entry.responsibilities || '')}</textarea>
+      </div>
+    </div>
+  `).join('');
+}
+
+function collectWorkHistory() {
+  const entries = document.querySelectorAll('#work-entries .work-entry');
+  return Array.from(entries).map(el => ({
+    company: el.querySelector('.we-company')?.value.trim() || '',
+    title: el.querySelector('.we-title')?.value.trim() || '',
+    startDate: el.querySelector('.we-start')?.value.trim() || '',
+    endDate: el.querySelector('.we-end')?.value.trim() || '',
+    responsibilities: el.querySelector('.we-resp')?.value.trim() || '',
+  })).filter(e => e.company || e.title);
+}
+
+async function loadSavedJobsGenerate() {
+  try {
+    const rows = await AzureTable.query('SavedJobs', "PartitionKey eq 'jobs'");
+    const sel = document.getElementById('gen-jd-saved-select');
+    if (!sel) return;
+    sel.innerHTML = '<option value="">Load saved JD…</option>' +
+      rows.map(r => `<option value="${escHtml(r.RowKey)}">${escHtml(r.Title)}</option>`).join('');
+  } catch(e) { /* silently ignore */ }
+}
+
+async function loadSavedJobGenerate() {
+  const sel = document.getElementById('gen-jd-saved-select');
+  const rowKey = sel.value;
+  if (!rowKey) return;
+  try {
+    const rows = await AzureTable.query('SavedJobs',
+      `PartitionKey eq 'jobs' and RowKey eq '${rowKey}'`);
+    if (!rows.length) return;
+    const r = rows[0];
+    document.getElementById('gen-job-desc').value = r.Description || '';
+    sel.value = '';
+    showToast(`Loaded: ${r.Title}`, 'success');
+  } catch(e) {
+    showToast('Load failed: ' + e.message, 'error');
+  }
+}
+
+async function runGeneration() {
+  const name = document.getElementById('gen-name').value.trim();
+  if (!name) { showToast('Please enter the candidate\'s name.', 'error'); return; }
+
+  const workHistory = collectWorkHistory();
+  if (workHistory.length === 0) { showToast('Please add at least one work position.', 'error'); return; }
+
+  const contactInfo = {
+    email: document.getElementById('gen-email').value.trim(),
+    phone: document.getElementById('gen-phone').value.trim(),
+    location: document.getElementById('gen-location').value.trim(),
+    linkedin: document.getElementById('gen-linkedin').value.trim(),
+  };
+  const education = document.getElementById('gen-education').value.trim();
+  const skills = document.getElementById('gen-skills').value.trim();
+  const jobDescription = document.getElementById('gen-job-desc').value.trim();
+
+  setGenerateRunning(true);
+  document.getElementById('gen-status-msg').textContent = '';
+  document.getElementById('generate-output').style.display = 'none';
+
+  try {
+    const result = await callGenerateProxy({ candidateName: name, contactInfo, workHistory, education, skills, jobDescription });
+    generationResult = result;
+    generationResult.candidateName = name;
+    generationResult._jobDesc = jobDescription;
+    renderGenerateResult(result);
+    autoSaveGenerateResult(result, name, jobDescription);
+    showToast('Resume generated successfully.', 'success');
+  } catch(err) {
+    document.getElementById('gen-status-msg').textContent = err.message;
+    document.getElementById('gen-status-msg').className = 'status-msg error';
+    showToast('Generation failed: ' + err.message, 'error');
+  } finally {
+    setGenerateRunning(false);
+  }
+}
+
+async function callGenerateProxy(payload) {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const response = await fetch(config.generateUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-functions-key': config.key,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (response.status === 429) {
+      if (attempt < 3) {
+        await new Promise(r => setTimeout(r, attempt * 3000));
+        continue;
+      }
+      throw new Error('Rate limit exceeded — too many requests. Please wait a moment and retry.');
+    }
+
+    if (response.status >= 500) {
+      if (attempt < 3) {
+        await new Promise(r => setTimeout(r, attempt * 2000));
+        continue;
+      }
+      throw new Error('The server encountered an error — please try again.');
+    }
+
+    if (!response.ok) {
+      const errBody = await response.text();
+      throw new Error(`Server error ${response.status}: ${errBody}`);
+    }
+
+    return await response.json();
+  }
+}
+
+function renderGenerateResult(result) {
+  document.getElementById('gen-summary').textContent = result.summary || '';
+  document.getElementById('gen-resume-text').textContent = result.generatedResume || '';
+  document.getElementById('generate-output').style.display = 'block';
+  document.getElementById('generate-output').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function setGenerateRunning(running) {
+  const btn = document.getElementById('generate-btn');
+  const icon = document.getElementById('gen-btn-icon');
+  const label = document.getElementById('gen-btn-label');
+  btn.disabled = running;
+  if (running) {
+    icon.outerHTML = '<span class="spinner" id="gen-btn-icon"></span>';
+    label.textContent = 'Generating...';
+  } else {
+    document.getElementById('gen-btn-icon').outerHTML = '<span id="gen-btn-icon">🪄</span>';
+    label.textContent = 'Generate Resume';
+  }
+}
+
+function clearGenerateForm() {
+  document.getElementById('gen-name').value = '';
+  document.getElementById('gen-email').value = '';
+  document.getElementById('gen-phone').value = '';
+  document.getElementById('gen-location').value = '';
+  document.getElementById('gen-linkedin').value = '';
+  document.getElementById('gen-education').value = '';
+  document.getElementById('gen-skills').value = '';
+  document.getElementById('gen-job-desc').value = '';
+  workEntries = [];
+  addWorkEntry();
+  document.getElementById('generate-output').style.display = 'none';
+  generationResult = null;
+}
+
+function copyGeneratedResume() {
+  const text = document.getElementById('gen-resume-text').innerText;
+  if (!text) return;
+  navigator.clipboard.writeText(text)
+    .then(() => showToast('Copied to clipboard.', 'success'))
+    .catch(() => showToast('Copy failed — please select and copy manually.', 'error'));
+}
+
+// ============================================================
+//  SHARED DOWNLOAD (enhance + generate)
+// ============================================================
+function downloadResume(source, format) {
+  const elId = source === 'enhance' ? 'enh-resume-text' : 'gen-resume-text';
+  const candidateName = source === 'enhance'
+    ? (enhancementResult?.candidateName || 'candidate')
+    : (generationResult?.candidateName || 'candidate');
+  const text = document.getElementById(elId).innerText;
+  if (!text) return;
+
+  if (format === 'pdf') { downloadResumeAsPdf(text, candidateName, source); return; }
+  if (format === 'docx') { downloadResumeAsDocx(text, candidateName, source); return; }
+
+  const name = candidateName.replace(/\s+/g, '_');
+  const blob = new Blob([text], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${name}_Resume.txt`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function downloadResumeAsPdf(resumeText, candidateName, source) {
+  const { jsPDF } = window.jspdf;
+  const name = candidateName.replace(/\s+/g, '_');
+  const doc = new jsPDF({ unit: 'pt', format: 'letter' });
+
+  const margin = 50;
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const maxWidth = pageWidth - margin * 2;
+  const lineHeight = 15;
+  let y = margin;
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(11);
+
+  for (const para of resumeText.split('\n')) {
+    const trimmed = para.trim();
+
+    if (trimmed && trimmed === trimmed.toUpperCase() && trimmed.length > 2 && !trimmed.startsWith('-')) {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(12);
+      if (y + lineHeight * 2 > pageHeight - margin) { doc.addPage(); y = margin; }
+      y += 6;
+      doc.text(trimmed, margin, y);
+      y += lineHeight + 2;
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(11);
+      continue;
+    }
+
+    const lines = doc.splitTextToSize(para || ' ', maxWidth);
+    for (const line of lines) {
+      if (y + lineHeight > pageHeight - margin) { doc.addPage(); y = margin; }
+      doc.text(line, margin, y);
+      y += lineHeight;
+    }
+  }
+
+  doc.save(`${name}_Resume.pdf`);
+}
+
+async function downloadResumeAsDocx(resumeText, candidateName, source) {
+  const { Document, Packer, Paragraph, TextRun } = window.docx;
+  const name = candidateName.replace(/\s+/g, '_');
+
+  const paragraphs = resumeText.split('\n').map(line => {
+    const trimmed = line.trim();
+
+    if (trimmed && trimmed === trimmed.toUpperCase() && trimmed.length > 2 && !trimmed.startsWith('-')) {
+      return new Paragraph({
+        children: [new TextRun({ text: trimmed, bold: true, size: 26 })],
+        spacing: { before: 240, after: 80 },
+        border: { bottom: { color: 'CCCCCC', size: 6, space: 4, style: 'single' } },
+      });
+    }
+
+    if (trimmed.startsWith('- ') || trimmed.startsWith('• ')) {
+      return new Paragraph({
+        children: [new TextRun({ text: trimmed.replace(/^[-•]\s*/, ''), size: 22 })],
+        bullet: { level: 0 },
+        spacing: { after: 40 },
+      });
+    }
+
+    if (!trimmed) {
+      return new Paragraph({ children: [new TextRun('')], spacing: { after: 80 } });
+    }
+
+    return new Paragraph({
+      children: [new TextRun({ text: line, size: 22 })],
+      spacing: { after: 40 },
+    });
+  });
+
+  const doc = new Document({
+    sections: [{ properties: {}, children: paragraphs }],
+  });
+
+  const blob = await Packer.toBlob(doc);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${name}_Resume.docx`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ============================================================
+//  ENHANCE HISTORY
+// ============================================================
+async function autoSaveEnhanceResult(result, candidateName, jobDesc) {
+  try {
+    await AzureTable.insert('EnhanceHistory', {
+      PartitionKey: 'enhance',
+      RowKey: Date.now().toString() + Math.random().toString(36).slice(2, 6),
+      CandidateName: candidateName || 'Unknown',
+      JobSnippet: (jobDesc || '').substring(0, 120),
+      Summary: (result.summary || '').substring(0, 500),
+      ResultJson: JSON.stringify(result),
+      CreatedAt: new Date().toISOString(),
+    });
+  } catch(e) { /* best-effort */ }
+}
+
+let enhanceHistoryRows = [];
+
+async function loadEnhanceHistory() {
+  const container = document.getElementById('enhance-history-content');
+  container.innerHTML = '<div class="loading-msg">Loading…</div>';
+  try {
+    enhanceHistoryRows = await AzureTable.query('EnhanceHistory');
+    renderEnhanceHistory();
+  } catch(e) {
+    container.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div>
+      <div class="empty-title">Could not load history</div>
+      <div class="empty-sub">${escHtml(e.message)}</div></div>`;
+  }
+}
+
+function renderEnhanceHistory() {
+  const container = document.getElementById('enhance-history-content');
+  if (!enhanceHistoryRows.length) {
+    container.innerHTML = `<div class="empty-state"><div class="empty-icon">✨</div>
+      <div class="empty-title">No enhancements yet</div>
+      <div class="empty-sub">Enhanced resumes are automatically saved here after each run.</div></div>`;
+    return;
+  }
+  container.innerHTML = `
+    <div class="results-toolbar" style="margin-bottom:12px;">
+      <span style="font-size:13px;color:var(--text-muted)">${enhanceHistoryRows.length} saved enhancement${enhanceHistoryRows.length !== 1 ? 's' : ''}</span>
+      <button class="filter-btn" onclick="clearEnhanceHistory()" style="margin-left:auto;">Clear All</button>
+    </div>
+    <div class="results-grid">
+      ${enhanceHistoryRows.map(r => renderEnhanceHistoryCard(r)).join('')}
+    </div>`;
+}
+
+function renderEnhanceHistoryCard(r) {
+  const uid = 'eh-' + r.RowKey;
+  const date = r.CreatedAt
+    ? new Date(r.CreatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    : '';
+  let result = {};
+  try { result = JSON.parse(r.ResultJson || '{}'); } catch(e) {}
+
+  return `
+    <div class="result-card" id="${uid}" style="border-color:rgba(153,51,235,0.3);">
+      <div class="result-header" onclick="toggleResult('${uid}')">
+        <div class="result-left">
+          <span class="verdict-badge" style="background:rgba(153,51,235,0.08);color:#7a22c9;border:1px solid rgba(153,51,235,0.3);">✨ Enhanced</span>
+          <div style="flex:1;min-width:0;">
+            <div class="result-name">${escHtml(r.CandidateName || 'Unknown')}</div>
+            <div class="result-summary">${escHtml(r.JobSnippet || '')}
+              <span style="color:var(--text-dim);font-size:11px;margin-left:6px;">${date}</span></div>
+          </div>
+        </div>
+        <div class="result-meta">
+          <button class="file-remove" onclick="event.stopPropagation();deleteEnhanceHistoryRow('${escHtml(r.RowKey)}')">✕</button>
+          <span class="chevron" id="chev-${uid}">▼</span>
+        </div>
+      </div>
+      <div class="result-body" id="body-${uid}">
+        ${r.Summary ? `<div class="reasoning-block" style="margin-top:16px;"><div class="reasoning-label">Summary</div>${escHtml(r.Summary)}</div>` : ''}
+        ${(result.changes || []).length ? `
+        <div class="result-sections" style="margin-top:14px;">
+          <div class="result-section">
+            <div class="rs-title">Changes Made</div>
+            <div class="rs-list">${result.changes.map(c => `<div class="rs-item">${escHtml(c)}</div>`).join('')}</div>
+          </div>
+          <div class="result-section">
+            <div class="rs-title">Key Alignments</div>
+            <div class="rs-list">${(result.keyAlignments || []).map(a => `<div class="rs-item">${escHtml(a)}</div>`).join('')}</div>
+          </div>
+        </div>` : ''}
+        ${result.enhancedResume ? `
+        <div style="margin-top:14px;">
+          <div class="rs-title" style="margin-bottom:8px;">Enhanced Resume</div>
+          <div class="enhanced-resume-box" style="max-height:300px;">${escHtml(result.enhancedResume)}</div>
+        </div>` : ''}
+      </div>
+    </div>`;
+}
+
+async function deleteEnhanceHistoryRow(rowKey) {
+  if (!confirm('Delete this enhancement from history?')) return;
+  try {
+    await AzureTable.remove('EnhanceHistory', 'enhance', rowKey);
+    enhanceHistoryRows = enhanceHistoryRows.filter(r => r.RowKey !== rowKey);
+    renderEnhanceHistory();
+  } catch(e) {
+    showToast('Delete failed: ' + e.message, 'error');
+  }
+}
+
+async function clearEnhanceHistory() {
+  if (!confirm('Delete all enhance history? This cannot be undone.')) return;
+  try {
+    await Promise.all(enhanceHistoryRows.map(r => AzureTable.remove('EnhanceHistory', 'enhance', r.RowKey)));
+    enhanceHistoryRows = [];
+    renderEnhanceHistory();
+    showToast('Enhance history cleared.', 'success');
+  } catch(e) {
+    showToast('Clear failed: ' + e.message, 'error');
+  }
+}
+
+// ============================================================
+//  GENERATE HISTORY
+// ============================================================
+async function autoSaveGenerateResult(result, candidateName, jobDesc) {
+  try {
+    await AzureTable.insert('GenerateHistory', {
+      PartitionKey: 'generate',
+      RowKey: Date.now().toString() + Math.random().toString(36).slice(2, 6),
+      CandidateName: candidateName || 'Unknown',
+      JobSnippet: (jobDesc || '').substring(0, 120),
+      Summary: (result.summary || '').substring(0, 500),
+      ResultJson: JSON.stringify(result),
+      CreatedAt: new Date().toISOString(),
+    });
+  } catch(e) { /* best-effort */ }
+}
+
+let generateHistoryRows = [];
+
+async function loadGenerateHistory() {
+  const container = document.getElementById('generate-history-content');
+  container.innerHTML = '<div class="loading-msg">Loading…</div>';
+  try {
+    generateHistoryRows = await AzureTable.query('GenerateHistory');
+    renderGenerateHistory();
+  } catch(e) {
+    container.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div>
+      <div class="empty-title">Could not load history</div>
+      <div class="empty-sub">${escHtml(e.message)}</div></div>`;
+  }
+}
+
+function renderGenerateHistory() {
+  const container = document.getElementById('generate-history-content');
+  if (!generateHistoryRows.length) {
+    container.innerHTML = `<div class="empty-state"><div class="empty-icon">🪄</div>
+      <div class="empty-title">No generated resumes yet</div>
+      <div class="empty-sub">Generated resumes are automatically saved here after each run.</div></div>`;
+    return;
+  }
+  container.innerHTML = `
+    <div class="results-toolbar" style="margin-bottom:12px;">
+      <span style="font-size:13px;color:var(--text-muted)">${generateHistoryRows.length} saved resume${generateHistoryRows.length !== 1 ? 's' : ''}</span>
+      <button class="filter-btn" onclick="clearGenerateHistory()" style="margin-left:auto;">Clear All</button>
+    </div>
+    <div class="results-grid">
+      ${generateHistoryRows.map(r => renderGenerateHistoryCard(r)).join('')}
+    </div>`;
+}
+
+function renderGenerateHistoryCard(r) {
+  const uid = 'gh-' + r.RowKey;
+  const date = r.CreatedAt
+    ? new Date(r.CreatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    : '';
+  let result = {};
+  try { result = JSON.parse(r.ResultJson || '{}'); } catch(e) {}
+
+  return `
+    <div class="result-card" id="${uid}" style="border-color:rgba(0,122,94,0.3);">
+      <div class="result-header" onclick="toggleResult('${uid}')">
+        <div class="result-left">
+          <span class="verdict-badge" style="background:rgba(0,122,94,0.08);color:#007A5E;border:1px solid rgba(0,122,94,0.3);">🪄 Generated</span>
+          <div style="flex:1;min-width:0;">
+            <div class="result-name">${escHtml(r.CandidateName || 'Unknown')}</div>
+            <div class="result-summary">${escHtml(r.JobSnippet || '')}
+              <span style="color:var(--text-dim);font-size:11px;margin-left:6px;">${date}</span></div>
+          </div>
+        </div>
+        <div class="result-meta">
+          <button class="file-remove" onclick="event.stopPropagation();deleteGenerateHistoryRow('${escHtml(r.RowKey)}')">✕</button>
+          <span class="chevron" id="chev-${uid}">▼</span>
+        </div>
+      </div>
+      <div class="result-body" id="body-${uid}">
+        ${r.Summary ? `<div class="reasoning-block" style="margin-top:16px;"><div class="reasoning-label">Summary</div>${escHtml(r.Summary)}</div>` : ''}
+        ${result.generatedResume ? `
+        <div style="margin-top:14px;">
+          <div class="rs-title" style="margin-bottom:8px;">Generated Resume</div>
+          <div class="editable-resume-box" style="max-height:300px;">${escHtml(result.generatedResume)}</div>
+        </div>` : ''}
+      </div>
+    </div>`;
+}
+
+async function deleteGenerateHistoryRow(rowKey) {
+  if (!confirm('Delete this generated resume from history?')) return;
+  try {
+    await AzureTable.remove('GenerateHistory', 'generate', rowKey);
+    generateHistoryRows = generateHistoryRows.filter(r => r.RowKey !== rowKey);
+    renderGenerateHistory();
+  } catch(e) {
+    showToast('Delete failed: ' + e.message, 'error');
+  }
+}
+
+async function clearGenerateHistory() {
+  if (!confirm('Delete all generate history? This cannot be undone.')) return;
+  try {
+    await Promise.all(generateHistoryRows.map(r => AzureTable.remove('GenerateHistory', 'generate', r.RowKey)));
+    generateHistoryRows = [];
+    renderGenerateHistory();
+    showToast('Generate history cleared.', 'success');
+  } catch(e) {
+    showToast('Clear failed: ' + e.message, 'error');
+  }
+}
+
+// ============================================================
+//  INTERVIEW GUIDE
+// ============================================================
+let interviewFileData = null;
+let interviewResumeText = '';
+let interviewJobDesc = '';
+let interviewCandidateName = '';
+let interviewCategories = [];
+let interviewNotes = {};
+let interviewWrapUpResult = null;
+let interviewHistoryRows = [];
+
+// -- File handling --
+function handleInterviewFile(e) {
+  const f = e.target.files[0];
+  if (!f) return;
+  processFile(f).then(data => { interviewFileData = data; showInterviewFile(f); });
+}
+
+function handleDropInterview(files) {
+  if (files.length > 0) processFile(files[0]).then(data => { interviewFileData = data; showInterviewFile(files[0]); });
+}
+
+function showInterviewFile(file) {
+  document.getElementById('interview-file-display').style.display = 'block';
+  document.getElementById('interview-fname').textContent = file.name;
+  document.getElementById('interview-fsize').textContent = formatSize(file.size);
+}
+
+function clearInterviewFile() {
+  interviewFileData = null;
+  document.getElementById('interview-file-display').style.display = 'none';
+  document.getElementById('interview-file').value = '';
+  document.getElementById('interview-name').value = '';
+}
+
+// -- Saved JD dropdown --
+async function loadSavedJobsInterview() {
+  try {
+    const rows = await AzureTable.query('SavedJobs', "PartitionKey eq 'jobs'");
+    const sel = document.getElementById('int-jd-saved-select');
+    if (!sel) return;
+    sel.innerHTML = '<option value="">Load saved JD…</option>' +
+      rows.map(r => `<option value="${escHtml(r.RowKey)}">${escHtml(r.Title || r.RowKey)}</option>`).join('');
+  } catch(e) {}
+}
+
+async function loadSavedJobInterview() {
+  const sel = document.getElementById('int-jd-saved-select');
+  const rowKey = sel.value;
+  if (!rowKey) return;
+  try {
+    const rows = await AzureTable.query('SavedJobs', `PartitionKey eq 'jobs' and RowKey eq '${rowKey}'`);
+    if (!rows.length) return;
+    document.getElementById('int-job-desc').value = rows[0].Description || '';
+    sel.value = '';
+    showToast(`Loaded: ${rows[0].Title || rowKey}`, 'success');
+  } catch(e) {
+    showToast('Load failed: ' + e.message, 'error');
+  }
+}
+
+// -- Step navigation --
+function transitionToStep(stepNumber) {
+  [1, 2, 3].forEach(n => {
+    document.getElementById('interview-step' + n).style.display = n === stepNumber ? 'block' : 'none';
+    const stepEl = document.getElementById('step-' + n);
+    stepEl.classList.remove('active', 'done');
+    if (n < stepNumber) stepEl.classList.add('done');
+    else if (n === stepNumber) stepEl.classList.add('active');
+  });
+}
+
+function resetToStep1() { transitionToStep(1); }
+function goBackToStep2() { transitionToStep(2); }
+
+// -- Generate questions --
+async function runGenerateQuestions() {
+  const jobDesc = document.getElementById('int-job-desc').value.trim();
+  if (!jobDesc) { showToast('Please enter a job description.', 'error'); return; }
+  if (!interviewFileData) { showToast('Please upload a resume file.', 'error'); return; }
+
+  const candidateName = document.getElementById('interview-name').value.trim() || inferName(interviewFileData);
+
+  setInterviewGenRunning(true);
+  document.getElementById('int-status-msg').textContent = '';
+
+  try {
+    const result = await callInterviewProxy({ mode: 'generateQuestions', resumeText: interviewFileData, jobDescription: jobDesc });
+
+    interviewCategories = result.categories || [];
+    interviewJobDesc = jobDesc;
+    interviewResumeText = interviewFileData;
+    interviewCandidateName = candidateName;
+    interviewNotes = {};
+    interviewWrapUpResult = null;
+
+    interviewCategories.forEach(cat => {
+      (cat.questions || []).forEach(q => {
+        interviewNotes[q.id] = { notes: '', followUps: [] };
+      });
+    });
+
+    document.getElementById('int-candidate-name-display').textContent = candidateName;
+    transitionToStep(2);
+    renderInterviewQuestions();
+    showToast('Questions generated. Begin your interview!', 'success');
+  } catch(err) {
+    const msg = document.getElementById('int-status-msg');
+    msg.textContent = err.message;
+    msg.className = 'status-msg error';
+    showToast('Failed: ' + err.message, 'error');
+  } finally {
+    setInterviewGenRunning(false);
+  }
+}
+
+function setInterviewGenRunning(running) {
+  const btn = document.getElementById('interview-gen-btn');
+  btn.disabled = running;
+  document.getElementById('int-gen-icon').outerHTML = running
+    ? '<span class="spinner" id="int-gen-icon"></span>'
+    : '<span id="int-gen-icon">🎙️</span>';
+  document.getElementById('int-gen-label').textContent = running ? 'Generating Questions…' : 'Generate Interview Questions';
+}
+
+// -- Render questions --
+function syncSingleNote(qId) {
+  if (!interviewNotes[qId]) interviewNotes[qId] = { notes: '', followUps: [] };
+  const el = document.getElementById('notes-' + qId);
+  if (el) interviewNotes[qId].notes = el.value;
+}
+
+function syncNotesFromDom() {
+  Object.keys(interviewNotes).forEach(qId => {
+    const el = document.getElementById('notes-' + qId);
+    if (el) interviewNotes[qId].notes = el.value;
+  });
+}
+
+function renderInterviewQuestions() {
+  syncNotesFromDom();
+  const container = document.getElementById('interview-questions-container');
+  let html = '';
+
+  interviewCategories.forEach((cat, catIdx) => {
+    if (!cat.questions || cat.questions.length === 0) return;
+    html += `
+      <div class="interview-category">
+        <div class="interview-category-header">
+          <div class="interview-category-title">
+            ${escHtml(cat.category)}
+            <span class="interview-category-desc">— ${escHtml(cat.description || '')}</span>
+          </div>
+        </div>
+        <div class="interview-category-body">`;
+
+    cat.questions.forEach((q, qIdx) => {
+      const qId = q.id;
+      const noteState = interviewNotes[qId] || { notes: '', followUps: [] };
+      const rowId = 'qrow-' + qId;
+      const escapedQ = escHtml(q.question).replace(/'/g, '&#39;');
+
+      html += `
+        <div class="interview-question-row" id="${rowId}">
+          <div class="interview-q-header" onclick="toggleQuestion('${rowId}')">
+            <span class="interview-q-num">${qIdx + 1}.</span>
+            <span class="interview-q-text">${escHtml(q.question)}</span>
+            <span class="interview-q-chevron" id="qchev-${rowId}">▼</span>
+          </div>
+          <div class="interview-q-body" id="qbody-${rowId}">
+            <div>
+              <div class="interview-notes-label">Recruiter Notes</div>
+              <textarea class="interview-notes-area" id="notes-${qId}"
+                placeholder="Type notes on what the candidate said…"
+                oninput="syncSingleNote('${qId}')">${escHtml(noteState.notes)}</textarea>
+            </div>
+            <div class="followup-section" id="followup-section-${qId}">
+              ${renderFollowUpSection(qId, noteState.followUps, escapedQ)}
+            </div>
+          </div>
+        </div>`;
+    });
+
+    html += `</div></div>`;
+  });
+
+  container.innerHTML = html;
+}
+
+function renderFollowUpSection(qId, followUps, escapedQ) {
+  return `
+    ${followUps.length > 0 ? `
+      <div class="followup-label">Follow-up Questions</div>
+      <div class="followup-list">
+        ${followUps.map(fu => `<div class="followup-item">${escHtml(fu)}</div>`).join('')}
+      </div>` : ''}
+    <button class="btn-followup" id="followup-btn-${qId}"
+      onclick="runGetFollowUps('${qId}', '${escapedQ}')">
+      <span id="followup-icon-${qId}">💡</span>
+      ${followUps.length > 0 ? 'Refresh Follow-ups' : 'Get Follow-ups'}
+    </button>`;
+}
+
+function toggleQuestion(rowId) {
+  document.getElementById('qbody-' + rowId).classList.toggle('open');
+  document.getElementById('qchev-' + rowId).classList.toggle('open');
+}
+
+function expandAllQuestions() {
+  document.querySelectorAll('.interview-q-body').forEach(el => el.classList.add('open'));
+  document.querySelectorAll('.interview-q-chevron').forEach(el => el.classList.add('open'));
+}
+
+function collapseAllQuestions() {
+  document.querySelectorAll('.interview-q-body').forEach(el => el.classList.remove('open'));
+  document.querySelectorAll('.interview-q-chevron').forEach(el => el.classList.remove('open'));
+}
+
+// -- Follow-up questions --
+async function runGetFollowUps(qId, originalQuestion) {
+  syncSingleNote(qId);
+  const notes = (interviewNotes[qId] || {}).notes || '';
+  if (!notes.trim()) { showToast('Add some interview notes first, then get follow-ups.', 'error'); return; }
+
+  const btn = document.getElementById('followup-btn-' + qId);
+  if (btn) btn.disabled = true;
+  const iconEl = document.getElementById('followup-icon-' + qId);
+  if (iconEl) iconEl.outerHTML = `<span class="spinner-dark" id="followup-icon-${qId}"></span>`;
+
+  try {
+    const result = await callInterviewProxy({
+      mode: 'generateFollowUps',
+      originalQuestion,
+      recruiterNotes: notes,
+      resumeText: interviewResumeText.substring(0, 3000),
+      jobDescription: interviewJobDesc.substring(0, 1000),
+    });
+
+    const followUps = result.followUps || [];
+    if (!interviewNotes[qId]) interviewNotes[qId] = { notes: '', followUps: [] };
+    interviewNotes[qId].followUps = followUps;
+
+    const section = document.getElementById('followup-section-' + qId);
+    if (section) {
+      section.innerHTML = renderFollowUpSection(qId, followUps, originalQuestion.replace(/'/g, '&#39;'));
+    }
+    showToast('Follow-up questions generated.', 'success');
+  } catch(err) {
+    showToast('Follow-up failed: ' + err.message, 'error');
+    const btn2 = document.getElementById('followup-btn-' + qId);
+    if (btn2) btn2.disabled = false;
+    const icon2 = document.getElementById('followup-icon-' + qId);
+    if (icon2) icon2.outerHTML = `<span id="followup-icon-${qId}">💡</span>`;
+  }
+}
+
+// -- Wrap up --
+async function runWrapUp() {
+  syncNotesFromDom();
+
+  const questionsAndNotes = [];
+  interviewCategories.forEach(cat => {
+    (cat.questions || []).forEach(q => {
+      questionsAndNotes.push({
+        category: cat.category,
+        question: q.question,
+        notes: (interviewNotes[q.id] || {}).notes || '',
+      });
+    });
+  });
+
+  if (questionsAndNotes.length === 0) { showToast('No questions to summarize.', 'error'); return; }
+
+  setWrapUpRunning(true);
+  document.getElementById('wrapup-status-msg').textContent = '';
+
+  try {
+    const result = await callInterviewProxy({
+      mode: 'wrapUp',
+      questionsAndNotes,
+      resumeText: interviewResumeText.substring(0, 2000),
+      jobDescription: interviewJobDesc.substring(0, 800),
+    });
+
+    interviewWrapUpResult = result;
+    renderWrapUpSummary(result);
+    transitionToStep(3);
+    showToast('Interview wrapped up. Review the summary below.', 'success');
+  } catch(err) {
+    const msg = document.getElementById('wrapup-status-msg');
+    msg.textContent = err.message;
+    msg.className = 'status-msg error';
+    showToast('Wrap-up failed: ' + err.message, 'error');
+  } finally {
+    setWrapUpRunning(false);
+  }
+}
+
+function setWrapUpRunning(running) {
+  const btn = document.getElementById('wrapup-btn');
+  btn.disabled = running;
+  document.getElementById('wrapup-icon').outerHTML = running
+    ? '<span class="spinner" id="wrapup-icon"></span>'
+    : '<span id="wrapup-icon">📋</span>';
+  document.getElementById('wrapup-label').textContent = running ? 'Wrapping Up…' : 'Wrap Up Interview';
+}
+
+function renderWrapUpSummary(result) {
+  const rec = (result.hiringRecommendation || '').toUpperCase();
+  const recClass = rec === 'ADVANCE' ? 'advance' : rec === 'HOLD' ? 'hold' : 'decline';
+  const recLabel = rec === 'ADVANCE' ? '✓ Advance' : rec === 'HOLD' ? '⚠ Hold' : '✕ Decline';
+
+  document.getElementById('wrapup-recommendation-badge').innerHTML =
+    `<span class="recommendation-badge ${recClass}">${recLabel}</span>`;
+  document.getElementById('wrapup-fit-assessment').textContent = result.fitAssessment || '';
+  document.getElementById('wrapup-strengths-list').innerHTML =
+    (result.keyStrengths || []).map(s => `<div class="rs-item">${escHtml(s)}</div>`).join('') ||
+    '<div class="rs-empty">None noted</div>';
+  document.getElementById('wrapup-risks-list').innerHTML =
+    (result.keyRisks || []).map(r => `<div class="rs-item">${escHtml(r)}</div>`).join('') ||
+    '<div class="rs-empty">None noted</div>';
+  document.getElementById('wrapup-rationale').textContent = result.recommendationRationale || '';
+  document.getElementById('wrapup-overall-notes').textContent = result.overallNotes || '';
+}
+
+// -- Proxy call --
+async function callInterviewProxy(payload) {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const response = await fetch(config.interviewUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-functions-key': config.key,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (response.status === 429) {
+      if (attempt < 3) {
+        await new Promise(r => setTimeout(r, attempt * 3000));
+        continue;
+      }
+      throw new Error('Rate limit exceeded — please wait a moment and retry.');
+    }
+
+    if (response.status >= 500) {
+      if (attempt < 3) {
+        await new Promise(r => setTimeout(r, attempt * 2000));
+        continue;
+      }
+      throw new Error('The server encountered an error — please try again.');
+    }
+
+    if (!response.ok) {
+      const errBody = await response.text();
+      throw new Error(`Server error ${response.status}: ${errBody}`);
+    }
+
+    return await response.json();
+  }
+}
+
+// -- Clear form --
+function clearInterviewForm() {
+  document.getElementById('int-job-desc').value = '';
+  clearInterviewFile();
+  interviewCategories = [];
+  interviewNotes = {};
+  interviewWrapUpResult = null;
+  interviewResumeText = '';
+  interviewJobDesc = '';
+  interviewCandidateName = '';
+  document.getElementById('int-status-msg').textContent = '';
+  transitionToStep(1);
+}
+
+// -- Save to history --
+async function saveInterviewSession() {
+  if (!interviewWrapUpResult) { showToast('Complete the wrap-up first before saving.', 'error'); return; }
+  try {
+    await AzureTable.insert('InterviewHistory', {
+      PartitionKey: 'interviews',
+      RowKey: Date.now().toString() + Math.random().toString(36).slice(2, 6),
+      CandidateName: interviewCandidateName || 'Unknown',
+      JobSnippet: interviewJobDesc.substring(0, 120),
+      Recommendation: interviewWrapUpResult.hiringRecommendation || '',
+      FitAssessment: (interviewWrapUpResult.fitAssessment || '').substring(0, 500),
+      SessionJson: JSON.stringify({
+        candidateName: interviewCandidateName,
+        jobDesc: interviewJobDesc.substring(0, 300),
+        categories: interviewCategories,
+        notes: interviewNotes,
+        wrapUp: interviewWrapUpResult,
+      }),
+      CreatedAt: new Date().toISOString(),
+    });
+    showToast('Interview session saved to history.', 'success');
+  } catch(e) {
+    showToast('Save failed: ' + e.message, 'error');
+  }
+}
+
+// -- History --
+async function loadInterviewHistory() {
+  const container = document.getElementById('interview-history-content');
+  container.innerHTML = '<div class="loading-msg" style="padding:20px;color:var(--text-muted);">Loading…</div>';
+  try {
+    interviewHistoryRows = await AzureTable.query('InterviewHistory');
+    renderInterviewHistory();
+  } catch(e) {
+    container.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div>
+      <div class="empty-title">Could not load history</div>
+      <div class="empty-sub">${escHtml(e.message)}</div></div>`;
+  }
+}
+
+function renderInterviewHistory() {
+  const container = document.getElementById('interview-history-content');
+  if (!interviewHistoryRows.length) {
+    container.innerHTML = `<div class="empty-state"><div class="empty-icon">🎙️</div>
+      <div class="empty-title">No interviews saved yet</div>
+      <div class="empty-sub">Save an interview session after wrapping up to see it here.</div></div>`;
+    return;
+  }
+  container.innerHTML = `
+    <div class="results-toolbar" style="margin-bottom:12px;">
+      <span style="font-size:13px;color:var(--text-muted);">
+        ${interviewHistoryRows.length} saved session${interviewHistoryRows.length !== 1 ? 's' : ''}
+      </span>
+      <button class="filter-btn" onclick="clearInterviewHistory()" style="margin-left:auto;">Clear All</button>
+    </div>
+    <div class="results-grid">
+      ${interviewHistoryRows.map(r => renderInterviewHistoryCard(r)).join('')}
+    </div>`;
+}
+
+function renderInterviewHistoryCard(r) {
+  const uid = 'ih-' + r.RowKey;
+  const date = r.CreatedAt
+    ? new Date(r.CreatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    : '';
+  const rec = (r.Recommendation || '').toUpperCase();
+  const recClass = rec === 'ADVANCE' ? 'viable' : rec === 'HOLD' ? 'review' : rec === 'DECLINE' ? 'reject' : '';
+  const recLabel = rec === 'ADVANCE' ? '✓ Advance' : rec === 'HOLD' ? '⚠ Hold' : rec === 'DECLINE' ? '✕ Decline' : rec;
+
+  let session = {};
+  try { session = JSON.parse(r.SessionJson || '{}'); } catch(e) {}
+  const wrapUp = session.wrapUp || {};
+
+  return `
+    <div class="result-card ${recClass}" id="${uid}">
+      <div class="result-header" onclick="toggleResult('${uid}')">
+        <div class="result-left">
+          <span class="verdict-badge ${recClass}">${recLabel}</span>
+          <div style="flex:1;min-width:0;">
+            <div class="result-name">${escHtml(r.CandidateName || 'Unknown')}</div>
+            <div class="result-summary">${escHtml(r.JobSnippet || '')}
+              <span style="color:var(--text-dim);font-size:11px;margin-left:6px;">${date}</span>
+            </div>
+          </div>
+        </div>
+        <div class="result-meta">
+          <button class="file-remove" style="margin-left:8px;"
+            onclick="event.stopPropagation();deleteInterviewHistoryRow('${escHtml(r.RowKey)}')">✕</button>
+          <span class="chevron" id="chev-${uid}">▼</span>
+        </div>
+      </div>
+      <div class="result-body" id="body-${uid}">
+        ${r.FitAssessment ? `
+          <div class="reasoning-block" style="margin-top:16px;">
+            <div class="reasoning-label">Fit Assessment</div>
+            ${escHtml(r.FitAssessment)}
+          </div>` : ''}
+        ${(wrapUp.keyStrengths || []).length || (wrapUp.keyRisks || []).length ? `
+          <div class="result-sections" style="margin-top:14px;">
+            <div class="result-section">
+              <div class="rs-title">Key Strengths</div>
+              <div class="rs-list">
+                ${(wrapUp.keyStrengths || []).map(s => `<div class="rs-item">${escHtml(s)}</div>`).join('')}
+              </div>
+            </div>
+            <div class="result-section">
+              <div class="rs-title">Key Risks</div>
+              <div class="rs-list">
+                ${(wrapUp.keyRisks || []).map(risk => `<div class="rs-item">${escHtml(risk)}</div>`).join('')}
+              </div>
+            </div>
+          </div>` : ''}
+      </div>
+    </div>`;
+}
+
+async function deleteInterviewHistoryRow(rowKey) {
+  if (!confirm('Delete this interview session from history?')) return;
+  try {
+    await AzureTable.remove('InterviewHistory', 'interviews', rowKey);
+    interviewHistoryRows = interviewHistoryRows.filter(r => r.RowKey !== rowKey);
+    renderInterviewHistory();
+  } catch(e) {
+    showToast('Delete failed: ' + e.message, 'error');
+  }
+}
+
+async function clearInterviewHistory() {
+  if (!confirm('Delete all interview history? This cannot be undone.')) return;
+  try {
+    await Promise.all(interviewHistoryRows.map(r => AzureTable.remove('InterviewHistory', 'interviews', r.RowKey)));
+    interviewHistoryRows = [];
+    renderInterviewHistory();
+    showToast('Interview history cleared.', 'success');
+  } catch(e) {
+    showToast('Clear failed: ' + e.message, 'error');
+  }
+}
+
+// ============================================================
+//  EMAIL GENERATION
+// ============================================================
+let _emailContext = null;
+
+function openEmailModalForResult(resultIndex) {
+  const r = results[resultIndex];
+  if (!r) return;
+  openEmailModal('result', {
+    candidateName: r.candidateName || 'the candidate',
+    role: (r._jobDesc || '').substring(0, 120),
+    resumeText: r._resumeText || '',
+    analysisContext: `Verdict: ${r.category} | Fit Score: ${r.fitScore ?? 'N/A'} | ${r.summary || ''}\n\nStrengths:\n${(r.strengths||[]).map(s=>'- '+s).join('\n')}\n\nConcerns:\n${(r.concerns||[]).map(s=>'- '+s).join('\n')}\n\nReasoning: ${r.reasoning || ''}`,
+  });
+}
+
+function openEmailModal(source, contextOverride) {
+  let context;
+
+  if (contextOverride) {
+    context = contextOverride;
+  } else if (source === 'enhance') {
+    if (!enhancementResult) return;
+    context = {
+      candidateName: enhancementResult.candidateName || 'the candidate',
+      role: (enhancementResult._jobDesc || '').substring(0, 120),
+      resumeText: document.getElementById('enh-resume-text').innerText,
+      analysisContext: `Enhancement summary: ${enhancementResult.summary || ''}\n\nKey alignments:\n${(enhancementResult.keyAlignments||[]).map(a=>'- '+a).join('\n')}`,
+    };
+  } else if (source === 'generate') {
+    if (!generationResult) return;
+    context = {
+      candidateName: generationResult.candidateName || 'the candidate',
+      role: (generationResult._jobDesc || '').substring(0, 120),
+      resumeText: document.getElementById('gen-resume-text').innerText,
+      analysisContext: `Generated resume summary: ${generationResult.summary || ''}`,
+    };
+  } else {
+    return;
+  }
+
+  _emailContext = context;
+
+  const modal = document.getElementById('email-modal');
+  const body = document.getElementById('email-modal-body');
+  const footer = document.getElementById('email-modal-footer');
+
+  body.innerHTML = '<div class="modal-loading"><div class="spinner-dark"></div>Generating email…</div>';
+  footer.style.display = 'none';
+  modal.classList.add('open');
+
+  callEmailProxy(context).then(result => {
+    body.innerHTML = `
+      <div class="email-subject">Subject: <span id="email-subject-text">${escHtml(result.subject || '')}</span></div>
+      <div class="email-body-box" id="email-body-text" contenteditable="true">${escHtml(result.body || '')}</div>
+    `;
+    footer.style.display = 'flex';
+  }).catch(err => {
+    body.innerHTML = `<div class="empty-state" style="padding:40px 20px;">
+      <div class="empty-icon">⚠️</div>
+      <div class="empty-title">Email generation failed</div>
+      <div class="empty-sub">${escHtml(err.message)}</div>
+    </div>`;
+    footer.style.display = 'flex';
+  });
+}
+
+async function callEmailProxy(context) {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const response = await fetch(config.emailUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-functions-key': config.key,
+      },
+      body: JSON.stringify(context),
+    });
+
+    if (response.status === 429) {
+      if (attempt < 3) {
+        await new Promise(r => setTimeout(r, attempt * 3000));
+        continue;
+      }
+      throw new Error('Rate limit exceeded — please wait a moment and try again.');
+    }
+
+    if (!response.ok) {
+      const errBody = await response.text();
+      throw new Error(`Server error ${response.status}: ${errBody}`);
+    }
+
+    return await response.json();
+  }
+}
+
+function closeEmailModal() {
+  document.getElementById('email-modal').classList.remove('open');
+}
+
+function handleModalOverlayClick(e) {
+  if (e.target === document.getElementById('email-modal')) closeEmailModal();
+}
+
+function copyEmail() {
+  const subject = document.getElementById('email-subject-text')?.textContent || '';
+  const body = document.getElementById('email-body-text')?.innerText || '';
+  const full = subject ? `Subject: ${subject}\n\n${body}` : body;
+  navigator.clipboard.writeText(full)
+    .then(() => showToast('Email copied to clipboard.', 'success'))
+    .catch(() => showToast('Copy failed — please select and copy manually.', 'error'));
+}
+</script>
+</body>
+</html>

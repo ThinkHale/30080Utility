@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>30080 Utility</title>
+<link rel="stylesheet" href="./shared/css/auth-overlay.css">
+<link rel="stylesheet" href="./shared/css/dash-link.css">
+<style>
+  :root {
+    --color-bg: #f4f6f9;
+    --color-surface: #ffffff;
+    --color-border: #dde3ea;
+    --color-text: #1c2530;
+    --color-text-muted: #5b6b7c;
+    --color-primary: #1f5eff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--color-bg);
+    color: var(--color-text);
+  }
+  header {
+    background: var(--color-surface);
+    border-bottom: 1px solid var(--color-border);
+    padding: 20px 24px;
+  }
+  header h1 { margin: 0; font-size: 1.3rem; }
+  header p { margin: 4px 0 0; color: var(--color-text-muted); font-size: 0.9rem; }
+  main {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 28px 24px 80px;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 18px;
+  }
+  .tile {
+    display: block;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    padding: 20px;
+    text-decoration: none;
+    color: var(--color-text);
+    box-shadow: 0 1px 3px rgba(20, 30, 50, 0.06);
+  }
+  .tile:hover { border-color: var(--color-primary); }
+  .tile h2 { margin: 0 0 6px; font-size: 1.05rem; }
+  .tile p { margin: 0 0 10px; font-size: 0.85rem; color: var(--color-text-muted); line-height: 1.4; }
+  .tile .tag {
+    display: inline-block;
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: #e6ecff;
+    color: var(--color-primary);
+  }
+  #signOutBar {
+    display: flex;
+    justify-content: flex-end;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 8px 24px 0;
+  }
+  #signOutBar button {
+    font-size: 0.8rem;
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    cursor: pointer;
+  }
+</style>
+</head>
+<body>
+<div id="platformAuthOverlay" class="platform-auth-overlay">
+  <div class="platform-auth-box">
+    <h2>30080 Utility</h2>
+    <p id="platformAuthMsg">Checking sign-in&hellip;</p>
+    <form id="platformAuthForm" style="display:none;">
+      <input type="email" id="platformAuthEmail" placeholder="Work email" required autocomplete="username">
+      <input type="password" id="platformAuthPassword" placeholder="Password" required autocomplete="current-password">
+      <button type="submit">Sign in</button>
+    </form>
+  </div>
+</div>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+<script src="./shared/js/firebase-config.js"></script>
+<script src="./shared/js/auth-guard.js"></script>
+
+<header>
+  <h1>30080 Utility</h1>
+  <p>One place for the core staffing-team tools.</p>
+</header>
+<div id="signOutBar"><button id="platformSignOutBtn" style="display:none;">Sign out</button></div>
+
+<main>
+  <div class="grid">
+    <a class="tile" href="apps/resume-review/index.html">
+      <span class="tag">Live</span>
+      <h2>Resume Review</h2>
+      <p>AI-powered resume screening, enhancement, generation, and interview-question prep.</p>
+    </a>
+    <a class="tile" href="apps/email-generator/index.html">
+      <span class="tag">Live</span>
+      <h2>Email Generator</h2>
+      <p>Build consistent New Start / Assignment End / Reminder emails from reusable templates.</p>
+    </a>
+    <a class="tile" href="apps/staffing-planner/index.html">
+      <span class="tag">Live</span>
+      <h2>Staffing Planner</h2>
+      <p>Daily shift staffing, waitlist, core-team tracking, and badge/DNR status checks.</p>
+    </a>
+    <a class="tile" href="apps/hot-list/index.html">
+      <span class="tag">Live</span>
+      <h2>Hot List</h2>
+      <p>AI-generated candidate hot-list bullets for sourcing and marketing.</p>
+    </a>
+    <a class="tile" href="apps/labor-reconcile/index.html">
+      <span class="tag">Live</span>
+      <h2>Labor Reconcile</h2>
+      <p>Compare labor hours across two timesheet exports and flag discrepancies.</p>
+    </a>
+    <a class="tile" href="apps/crescent-core/index.html">
+      <span class="tag">Live</span>
+      <h2>Crescent Core</h2>
+      <p>Hours tracker with CSV/Excel import.</p>
+    </a>
+  </div>
+</main>
+
+<script>
+  // window.platformAuth is set synchronously by shared/js/auth-guard.js,
+  // loaded above, before this script runs.
+  if (window.platformAuth) {
+    var btn = document.getElementById("platformSignOutBtn");
+    window.platformAuth.onAuthStateChanged(function (user) {
+      btn.style.display = user ? "" : "none";
+    });
+    btn.addEventListener("click", function () { window.platformAuth.signOut(); });
+  }
+</script>
+</body>
+</html>

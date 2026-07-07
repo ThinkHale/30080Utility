@@ -1,0 +1,1022 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Employbridge Hot List Generator</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone@7.23.10/babel.min.js"></script>
+  <script src="https://unpkg.com/mammoth@1/mammoth.browser.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #F9F8FF; }
+  </style>
+</head>
+<body>
+<link rel="stylesheet" href="../../shared/css/dash-link.css">
+<script src="../../shared/js/dash-link.js"></script>
+
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    // ── Brand colors ───────────────────────────────────────────────────────
+    const EB = {
+      purple:      "#4B2E83",
+      purpleLight: "#6B46C1",
+      purpleDark:  "#3B2068",
+      accent:      "#8B5CF6",
+      gray50:      "#F9F8FF",
+      gray100:     "#F0EEF8",
+      gray200:     "#DDD9EE",
+      gray400:     "#9B93C0",
+      gray600:     "#5B5480",
+      gray800:     "#2D2850",
+      white:       "#FFFFFF",
+    };
+
+    // ── Default settings data ──────────────────────────────────────────────
+    const DEFAULT_LOCATIONS = [
+      { id: "wichita",     label: "Wichita" },
+      { id: "kansas-city", label: "Kansas City" },
+      { id: "omaha",       label: "Omaha" },
+      { id: "iowa",        label: "Iowa" },
+      { id: "peoria",      label: "Peoria" },
+      { id: "st-louis",    label: "St. Louis" },
+    ];
+    const DEFAULT_INDUSTRIES = [{ id: "general", label: "General" }];
+
+    // ── Supabase ───────────────────────────────────────────────────────────
+    const SUPABASE_URL      = "https://rpfoqfjtaijduflbgvtr.supabase.co";
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJwZm9xZmp0YWlqZHVmbGJndnRyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUzMzA1OTcsImV4cCI6MjA5MDkwNjU5N30.56syj7vnm8HpMF1hdk3ybEg6TDwJmhrZ9G2G3TUa8zE";
+    const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    // ── Local storage helpers (settings only) ─────────────────────────────
+    const load = (key, fallback) => {
+      try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; }
+      catch { return fallback; }
+    };
+    const save = (key, val) => localStorage.setItem(key, JSON.stringify(val));
+
+    // ── Claude API proxy ───────────────────────────────────────────────────
+    const WORKER_URL = "https://employbridge-hotlist.plx30080.workers.dev";
+    async function generateBullets(inputText) {
+      const res = await fetch(WORKER_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ inputText }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `Server error ${res.status}`);
+      }
+      return res.json();
+    }
+
+    // ── DB <-> app conversion ──────────────────────────────────────────────
+    function rowToCandidate(row, addedAt) {
+      return {
+        id:          row.candidate_id,
+        candidateId: row.candidate_id,
+        title:       row.title,
+        payRate:     row.pay_rate,
+        shift:       row.shift,
+        bullets:     row.bullets || [],
+        location:    row.location,
+        industry:    row.industry,
+        addedAt:     addedAt || row.created_at,
+      };
+    }
+
+    // ── DB operations ──────────────────────────────────────────────────────
+    async function fetchHotList(userId) {
+      const { data, error } = await db
+        .from("hot_list_entries")
+        .select("added_at, candidates(candidate_id,title,pay_rate,shift,bullets,location,industry)")
+        .eq("user_id", userId)
+        .order("added_at", { ascending: false });
+      if (error) throw error;
+      return (data || []).filter(e => e.candidates).map(e => rowToCandidate(e.candidates, e.added_at));
+    }
+
+    async function saveCandidate(candidateData, userId) {
+      // Upsert shared candidate record (updates all fields if candidate_id already exists)
+      const { error: upsertErr } = await db.from("candidates").upsert({
+        candidate_id: candidateData.candidateId,
+        title:        candidateData.title,
+        pay_rate:     candidateData.payRate  || "",
+        shift:        candidateData.shift    || "",
+        bullets:      candidateData.bullets,
+        location:     candidateData.location,
+        industry:     candidateData.industry,
+        created_by:   userId,
+      }, { onConflict: "candidate_id" });
+      if (upsertErr) throw upsertErr;
+
+      // Add to user's hot list — ignore if already present
+      const { error: entryErr } = await db.from("hot_list_entries").insert({
+        user_id:      userId,
+        candidate_id: candidateData.candidateId,
+      });
+      if (entryErr && entryErr.code !== "23505") throw entryErr;
+    }
+
+    async function removeFromHotList(userId, candidateId) {
+      const { error } = await db
+        .from("hot_list_entries")
+        .delete()
+        .eq("user_id",      userId)
+        .eq("candidate_id", candidateId);
+      if (error) throw error;
+    }
+
+    async function updateCandidateInDB(candidateId, updates) {
+      const { error } = await db.from("candidates").update({
+        title:    updates.title,
+        pay_rate: updates.payRate,
+        shift:    updates.shift,
+        bullets:  updates.bullets,
+        location: updates.location,
+        industry: updates.industry,
+      }).eq("candidate_id", candidateId);
+      if (error) throw error;
+    }
+
+    async function searchCandidates({ keyword, location, industry }) {
+      let query = db.from("candidates").select("*");
+      if (location && location !== "all") query = query.eq("location", location);
+      if (industry && industry !== "all") query = query.eq("industry", industry);
+      query = query.order("created_at", { ascending: false }).limit(200);
+      const { data, error } = await query;
+      if (error) throw error;
+      let results = (data || []).map(r => rowToCandidate(r));
+      if (keyword) {
+        const kw = keyword.toLowerCase();
+        results = results.filter(c =>
+          c.candidateId.toLowerCase().includes(kw) ||
+          c.title.toLowerCase().includes(kw) ||
+          c.bullets.some(b => b.toLowerCase().includes(kw))
+        );
+      }
+      return results;
+    }
+
+    // ── Shared UI components ───────────────────────────────────────────────
+    function Logo({ size = 28 }) {
+      return <img src="employbridge_logo.png" alt="Employbridge" style={{ height: Math.round(size * 1.7), width: "auto" }} />;
+    }
+
+    function NavTab({ label, active, onClick, icon }) {
+      return (
+        <button onClick={onClick} style={{ background: active ? EB.white : "transparent", border: "none", borderRadius: "8px 8px 0 0", padding: "10px 20px", cursor: "pointer", fontFamily: "'Trebuchet MS', sans-serif", fontWeight: active ? 700 : 400, fontSize: 14, color: active ? EB.purple : "rgba(255,255,255,0.8)", display: "flex", alignItems: "center", gap: 6, transition: "all 0.15s" }}>
+          <span>{icon}</span>{label}
+        </button>
+      );
+    }
+
+    function Select({ value, onChange, options, style }) {
+      return (
+        <select value={value} onChange={e => onChange(e.target.value)} style={{ background: EB.white, border: `2px solid ${EB.gray200}`, borderRadius: 8, padding: "8px 12px", fontFamily: "'Trebuchet MS', sans-serif", fontSize: 14, color: EB.gray800, cursor: "pointer", outline: "none", ...style }}>
+          {options.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
+        </select>
+      );
+    }
+
+    function Btn({ children, onClick, variant = "primary", disabled, style }) {
+      const base = { border: "none", borderRadius: 8, padding: "9px 18px", cursor: disabled ? "not-allowed" : "pointer", fontFamily: "'Trebuchet MS', sans-serif", fontWeight: 700, fontSize: 13, transition: "all 0.15s", opacity: disabled ? 0.5 : 1, display: "inline-flex", alignItems: "center", gap: 6, ...style };
+      const v = { primary: { background: EB.purple, color: EB.white }, secondary: { background: EB.gray100, color: EB.purple }, danger: { background: "#FEE2E2", color: "#DC2626" }, success: { background: "#D1FAE5", color: "#065F46" }, accent: { background: EB.accent, color: EB.white } };
+      return <button onClick={disabled ? undefined : onClick} style={{ ...base, ...v[variant] }}>{children}</button>;
+    }
+
+    // ── AUTH PAGE ──────────────────────────────────────────────────────────
+    function AuthPage() {
+      const [mode,     setMode]     = useState("login");
+      const [email,    setEmail]    = useState("");
+      const [password, setPassword] = useState("");
+      const [loading,  setLoading]  = useState(false);
+      const [error,    setError]    = useState("");
+      const [message,  setMessage]  = useState("");
+
+      const handleSubmit = async () => {
+        if (!email.trim() || !password.trim()) { setError("Email and password are required."); return; }
+        setLoading(true); setError(""); setMessage("");
+        try {
+          if (mode === "signup") {
+            const { error } = await db.auth.signUp({ email, password });
+            if (error) throw error;
+            setMessage("Account created! Check your email to confirm, then sign in.");
+          } else {
+            const { error } = await db.auth.signInWithPassword({ email, password });
+            if (error) throw error;
+          }
+        } catch (e) {
+          setError(e.message || "Authentication failed.");
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const inp = { width: "100%", border: `2px solid ${EB.gray200}`, borderRadius: 8, padding: "10px 14px", fontFamily: "'Trebuchet MS', sans-serif", fontSize: 14, color: EB.gray800, outline: "none", boxSizing: "border-box" };
+      const switchBtn = { background: "none", border: "none", color: EB.purple, fontWeight: 700, cursor: "pointer", fontFamily: "'Trebuchet MS', sans-serif", fontSize: 13 };
+
+      return (
+        <div style={{ minHeight: "100vh", background: EB.gray50, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ background: EB.white, borderRadius: 16, padding: 40, width: "100%", maxWidth: 400, boxShadow: "0 4px 32px rgba(75,46,131,0.12)" }}>
+            <div style={{ textAlign: "center", marginBottom: 28 }}>
+              <Logo size={20} />
+              <h2 style={{ fontFamily: "'Trebuchet MS', sans-serif", color: EB.purple, marginTop: 16, marginBottom: 4 }}>Hot List Generator</h2>
+              <p style={{ color: EB.gray600, fontSize: 14 }}>{mode === "login" ? "Sign in to your account" : "Create a new account"}</p>
+            </div>
+
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: EB.gray600, marginBottom: 4, textTransform: "uppercase", letterSpacing: 1 }}>Email</label>
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSubmit()} placeholder="you@example.com" style={inp} />
+            </div>
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: EB.gray600, marginBottom: 4, textTransform: "uppercase", letterSpacing: 1 }}>Password</label>
+              <input type="password" value={password} onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === "Enter" && handleSubmit()} placeholder="••••••••" style={inp} />
+            </div>
+
+            {error   && <div style={{ background: "#FEE2E2", color: "#DC2626", borderRadius: 8, padding: 10, marginBottom: 14, fontSize: 13 }}>{error}</div>}
+            {message && <div style={{ background: "#D1FAE5", color: "#065F46", borderRadius: 8, padding: 10, marginBottom: 14, fontSize: 13 }}>{message}</div>}
+
+            <Btn onClick={handleSubmit} disabled={loading} style={{ width: "100%", justifyContent: "center" }}>
+              {loading ? "Please wait…" : mode === "login" ? "Sign In" : "Create Account"}
+            </Btn>
+
+            <div style={{ textAlign: "center", marginTop: 18, fontSize: 13, color: EB.gray600 }}>
+              {mode === "login"
+                ? <span>Don't have an account? <button style={switchBtn} onClick={() => { setMode("signup"); setError(""); setMessage(""); }}>Sign up</button></span>
+                : <span>Already have an account? <button style={switchBtn} onClick={() => { setMode("login"); setError(""); setMessage(""); }}>Sign in</button></span>
+              }
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ── ADD CANDIDATE PAGE ─────────────────────────────────────────────────
+    function AddCandidatePage({ locations, industries, session, onAdd }) {
+      const [location,  setLocation]  = useState(locations[0]?.id || "");
+      const [industry,  setIndustry]  = useState(industries[0]?.id || "general");
+      const [inputText, setInputText] = useState("");
+      const [loading,   setLoading]   = useState(false);
+      const [preview,   setPreview]   = useState(null);
+      const [error,     setError]     = useState("");
+      const [added,     setAdded]     = useState(false);
+      const [saving,    setSaving]    = useState(false);
+      const [batch,     setBatch]     = useState(null);
+      const fileRef = useRef();
+
+      const extractText = async (file) => {
+        if (file.name.toLowerCase().endsWith(".docx")) {
+          const ab = await file.arrayBuffer();
+          const r  = await mammoth.extractRawText({ arrayBuffer: ab });
+          return r.value;
+        }
+        if (file.name.toLowerCase().endsWith(".pdf")) {
+          pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+          const ab  = await file.arrayBuffer();
+          const pdf = await pdfjsLib.getDocument({ data: ab }).promise;
+          const pages = [];
+          for (let i = 1; i <= pdf.numPages; i++) {
+            const page    = await pdf.getPage(i);
+            const content = await page.getTextContent();
+            pages.push(content.items.map(x => x.str).join(" "));
+          }
+          return pages.join("\n");
+        }
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload  = ev => resolve(ev.target.result);
+          reader.onerror = reject;
+          reader.readAsText(file);
+        });
+      };
+
+      const handleFile = async (e) => {
+        const files = Array.from(e.target.files);
+        e.target.value = "";
+        if (!files.length) return;
+
+        if (files.length === 1) {
+          try   { setInputText(await extractText(files[0])); }
+          catch { setError("Could not read file. Please try a different format."); }
+          return;
+        }
+
+        // Batch mode
+        setBatch({ total: files.length, current: 0, results: [] });
+        setError(""); setPreview(null);
+        for (let i = 0; i < files.length; i++) {
+          setBatch(b => ({ ...b, current: i + 1 }));
+          try {
+            const text   = await extractText(files[i]);
+            const result = await generateBullets(text);
+            if (!result.id) {
+              setBatch(b => ({ ...b, results: [...b.results, { name: files[i].name, success: false, reason: "No candidate ID found in resume" }] }));
+              continue;
+            }
+            const cd = { candidateId: result.id, title: result.title, payRate: result.payRate || "", shift: result.shift || "", bullets: result.bullets, location, industry };
+            await saveCandidate(cd, session.user.id);
+            onAdd(cd);
+            setBatch(b => ({ ...b, results: [...b.results, { name: files[i].name, success: true, title: result.title }] }));
+          } catch (err) {
+            setBatch(b => ({ ...b, results: [...b.results, { name: files[i].name, success: false, reason: err.message }] }));
+          }
+        }
+      };
+
+      const handleGenerate = async () => {
+        if (!inputText.trim()) return;
+        setLoading(true); setError(""); setPreview(null); setAdded(false);
+        try {
+          const result = await generateBullets(inputText);
+          setPreview({ ...result, id: result.id || "", payRate: result.payRate || "", shift: result.shift || "" });
+        } catch (e) {
+          setError(e.message || "Could not parse candidate. Check your input and try again.");
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const handleAddToList = async () => {
+        if (!preview.id?.trim()) {
+          setError("Candidate ID is required. Enter the ID before adding.");
+          return;
+        }
+        setSaving(true); setError("");
+        try {
+          const cd = { candidateId: preview.id.trim(), title: preview.title, payRate: preview.payRate, shift: preview.shift, bullets: preview.bullets, location, industry };
+          await saveCandidate(cd, session.user.id);
+          onAdd(cd);
+          setPreview(null); setInputText(""); setAdded(true);
+          setTimeout(() => setAdded(false), 3000);
+        } catch (e) {
+          setError(e.message || "Failed to save candidate.");
+        } finally {
+          setSaving(false);
+        }
+      };
+
+      const fieldStyle = { border: `1px solid ${EB.gray200}`, borderRadius: 6, padding: "5px 10px", fontSize: 13, fontFamily: "'Trebuchet MS', sans-serif", outline: "none" };
+
+      return (
+        <div style={{ maxWidth: 820, margin: "0 auto" }}>
+          <h2 style={{ fontFamily: "'Trebuchet MS', sans-serif", color: EB.purple, marginBottom: 4 }}>Add Candidate</h2>
+          <p style={{ color: EB.gray600, marginBottom: 24, fontSize: 14 }}>Paste resume text or notes below. Claude will generate 5 selling points for the hot list.</p>
+
+          <div style={{ display: "flex", gap: 16, marginBottom: 20, flexWrap: "wrap" }}>
+            <div>
+              <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: EB.gray600, marginBottom: 4, textTransform: "uppercase", letterSpacing: 1 }}>Market / Location</label>
+              <Select value={location} onChange={setLocation} options={locations} style={{ minWidth: 180 }} />
+            </div>
+            <div>
+              <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: EB.gray600, marginBottom: 4, textTransform: "uppercase", letterSpacing: 1 }}>Industry</label>
+              <Select value={industry} onChange={setIndustry} options={industries} style={{ minWidth: 150 }} />
+            </div>
+          </div>
+
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: EB.gray600, marginBottom: 6, textTransform: "uppercase", letterSpacing: 1 }}>Candidate Notes or Resume Text</label>
+            <textarea value={inputText} onChange={e => setInputText(e.target.value)} placeholder="Paste resume text, recruiter notes, or any candidate information here…" rows={10} style={{ width: "100%", borderRadius: 10, border: `2px solid ${EB.gray200}`, padding: 14, fontFamily: "'Trebuchet MS', sans-serif", fontSize: 14, color: EB.gray800, resize: "vertical", outline: "none", boxSizing: "border-box", background: EB.white }} />
+          </div>
+
+          <div style={{ display: "flex", gap: 10, marginBottom: 24, flexWrap: "wrap" }}>
+            <Btn onClick={() => fileRef.current.click()} variant="secondary">📎 Upload Resume(s)</Btn>
+            <input ref={fileRef} type="file" accept=".txt,.doc,.docx,.pdf" multiple style={{ display: "none" }} onChange={handleFile} />
+            <Btn onClick={handleGenerate} disabled={!inputText.trim() || loading}>
+              {loading ? "⏳ Generating…" : "✨ Generate Bullets"}
+            </Btn>
+          </div>
+
+          {batch && (
+            <div style={{ background: EB.gray100, borderRadius: 10, padding: 16, marginBottom: 16 }}>
+              {batch.current < batch.total ? (
+                <div style={{ color: EB.purple, fontWeight: 700, fontSize: 14 }}>⏳ Processing {batch.current} of {batch.total} resumes…</div>
+              ) : (
+                <>
+                  <div style={{ color: EB.gray800, fontWeight: 700, fontSize: 14, marginBottom: 8 }}>
+                    Batch complete: {batch.results.filter(r => r.success).length} of {batch.total} added
+                  </div>
+                  {batch.results.map((r, i) => (
+                    <div key={i} style={{ fontSize: 13, color: r.success ? "#065F46" : "#DC2626", marginBottom: 4 }}>
+                      {r.success ? "✅" : "❌"} {r.name}{r.title ? ` → ${r.title}` : ""}{r.reason ? ` (${r.reason})` : ""}
+                    </div>
+                  ))}
+                  <div style={{ marginTop: 8 }}><Btn onClick={() => setBatch(null)} variant="secondary">Dismiss</Btn></div>
+                </>
+              )}
+            </div>
+          )}
+
+          {error && <div style={{ background: "#FEE2E2", color: "#DC2626", borderRadius: 8, padding: 12, marginBottom: 16, fontSize: 14 }}>⚠️ {error}</div>}
+          {added && <div style={{ background: "#D1FAE5", color: "#065F46", borderRadius: 8, padding: 12, marginBottom: 16, fontSize: 14, fontWeight: 700 }}>✅ Candidate added to your {locations.find(l => l.id === location)?.label} hot list!</div>}
+
+          {preview && (
+            <div style={{ background: EB.white, border: `2px solid ${EB.purple}`, borderRadius: 12, padding: 24, marginBottom: 24, boxShadow: "0 4px 20px rgba(75,46,131,0.08)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
+                <div>
+                  <h3 style={{ margin: 0, fontFamily: "'Trebuchet MS', sans-serif", color: EB.purple, fontSize: 18 }}>{preview.title}</h3>
+                  <div style={{ display: "flex", gap: 12, marginTop: 4 }}>
+                    {preview.payRate && <span style={{ fontSize: 13, color: EB.gray600 }}>💰 {preview.payRate}</span>}
+                    {preview.shift   && <span style={{ fontSize: 13, color: EB.gray600 }}>🕐 {preview.shift}</span>}
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <Btn onClick={() => setPreview(null)} variant="secondary">✕ Discard</Btn>
+                  <Btn onClick={handleAddToList} variant="accent" disabled={saving}>{saving ? "Saving…" : "✓ Add to Hot List"}</Btn>
+                </div>
+              </div>
+
+              {preview.bullets.map((b, i) => (
+                <div key={i} style={{ display: "flex", gap: 10, marginBottom: 8, alignItems: "flex-start" }}>
+                  <span style={{ color: EB.purple, marginTop: 2, flexShrink: 0 }}>•</span>
+                  <textarea value={b} onChange={e => { const u = [...preview.bullets]; u[i] = e.target.value; setPreview({ ...preview, bullets: u }); }} rows={2} style={{ flex: 1, border: `1px solid ${EB.gray200}`, borderRadius: 6, padding: "6px 10px", fontSize: 14, fontFamily: "'Trebuchet MS', sans-serif", color: EB.gray800, resize: "vertical", outline: "none" }} />
+                  <button onClick={() => setPreview({ ...preview, bullets: preview.bullets.filter((_, j) => j !== i) })} style={{ background: "none", border: "none", cursor: "pointer", color: EB.gray400, fontSize: 16, padding: "6px 2px", flexShrink: 0, lineHeight: 1 }}>×</button>
+                </div>
+              ))}
+
+              <div style={{ display: "flex", gap: 12, marginTop: 16, flexWrap: "wrap" }}>
+                <div>
+                  <label style={{ fontSize: 11, color: EB.gray600, display: "block", marginBottom: 3, textTransform: "uppercase", letterSpacing: 1 }}>Role Title</label>
+                  <input value={preview.title} onChange={e => setPreview({ ...preview, title: e.target.value })} style={fieldStyle} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 11, display: "block", marginBottom: 3, textTransform: "uppercase", letterSpacing: 1, color: !preview.id?.trim() ? "#DC2626" : EB.gray600, fontWeight: !preview.id?.trim() ? 700 : 400 }}>
+                    Candidate ID <span style={{ color: "#DC2626" }}>*</span>
+                  </label>
+                  <input
+                    value={preview.id}
+                    onChange={e => setPreview({ ...preview, id: e.target.value })}
+                    placeholder="Required"
+                    style={{ ...fieldStyle, width: 140, borderColor: !preview.id?.trim() ? "#DC2626" : EB.gray200 }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: 11, color: EB.gray600, display: "block", marginBottom: 3, textTransform: "uppercase", letterSpacing: 1 }}>Pay Rate</label>
+                  <input value={preview.payRate} onChange={e => setPreview({ ...preview, payRate: e.target.value })} style={{ ...fieldStyle, width: 100 }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 11, color: EB.gray600, display: "block", marginBottom: 3, textTransform: "uppercase", letterSpacing: 1 }}>Shift</label>
+                  <input value={preview.shift} onChange={e => setPreview({ ...preview, shift: e.target.value })} style={{ ...fieldStyle, width: 120 }} />
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // ── CANDIDATE CARD ─────────────────────────────────────────────────────
+    function CandidateCard({ candidate: c, locations, industries, onEdit, onRemove, removing, extraActions }) {
+      const loc = locations.find(l => l.id === c.location)?.label || c.location;
+      const ind = industries.find(i => i.id === c.industry)?.label || c.industry;
+      return (
+        <div style={{ background: EB.white, borderRadius: 12, border: `1px solid ${EB.gray200}`, padding: 20, marginBottom: 14, boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 8 }}>
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <span style={{ fontFamily: "'Trebuchet MS', sans-serif", fontWeight: 700, color: EB.purple, fontSize: 16 }}>{c.title}</span>
+                {c.candidateId && <span style={{ background: EB.gray100, color: EB.gray600, borderRadius: 4, padding: "2px 8px", fontSize: 12 }}>#{c.candidateId}</span>}
+                <span style={{ background: "#EDE9FE", color: EB.purple, borderRadius: 4, padding: "2px 8px", fontSize: 12 }}>{loc}</span>
+                {ind !== "General" && <span style={{ background: EB.gray100, color: EB.gray600, borderRadius: 4, padding: "2px 8px", fontSize: 12 }}>{ind}</span>}
+              </div>
+              <div style={{ display: "flex", gap: 12, marginTop: 4 }}>
+                {c.payRate && <span style={{ fontSize: 13, color: EB.gray600 }}>💰 {c.payRate}</span>}
+                {c.shift   && <span style={{ fontSize: 13, color: EB.gray600 }}>🕐 {c.shift}</span>}
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {extraActions}
+              {onEdit   && <Btn onClick={onEdit}   variant="secondary">✏️ Edit</Btn>}
+              {onRemove && <Btn onClick={onRemove} variant="danger" disabled={removing}>{removing ? "Removing…" : "🗑 Remove"}</Btn>}
+            </div>
+          </div>
+          <ul style={{ margin: "12px 0 0", paddingLeft: 20 }}>
+            {c.bullets.map((b, i) => <li key={i} style={{ fontSize: 14, color: EB.gray800, marginBottom: 4, lineHeight: 1.5 }}>{b}</li>)}
+          </ul>
+        </div>
+      );
+    }
+
+    // ── EDIT FORM ──────────────────────────────────────────────────────────
+    function EditForm({ candidate, locations, industries, onSave, onCancel }) {
+      const [form, setForm] = useState({ ...candidate });
+      const setBullet    = (i, v) => { const b = [...form.bullets]; b[i] = v; setForm({ ...form, bullets: b }); };
+      const removeBullet = (i)    => setForm({ ...form, bullets: form.bullets.filter((_, j) => j !== i) });
+
+      const fieldStyle = { border: `1px solid ${EB.gray200}`, borderRadius: 6, padding: "6px 10px", fontSize: 14, fontFamily: "'Trebuchet MS', sans-serif", outline: "none" };
+
+      return (
+        <div style={{ background: EB.white, borderRadius: 12, border: `2px solid ${EB.purple}`, padding: 20, marginBottom: 14 }}>
+          <div style={{ display: "flex", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
+            <div>
+              <label style={{ fontSize: 11, color: EB.gray600, display: "block", marginBottom: 3, textTransform: "uppercase", letterSpacing: 1 }}>Role Title</label>
+              <input value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} style={fieldStyle} />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, color: EB.gray600, display: "block", marginBottom: 3, textTransform: "uppercase", letterSpacing: 1 }}>Candidate ID <span style={{ color: "#DC2626" }}>*</span></label>
+              <input value={form.candidateId} onChange={e => setForm({ ...form, candidateId: e.target.value, id: e.target.value })} style={{ ...fieldStyle, width: 120 }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, color: EB.gray600, display: "block", marginBottom: 3, textTransform: "uppercase", letterSpacing: 1 }}>Pay Rate</label>
+              <input value={form.payRate} onChange={e => setForm({ ...form, payRate: e.target.value })} style={{ ...fieldStyle, width: 90 }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, color: EB.gray600, display: "block", marginBottom: 3, textTransform: "uppercase", letterSpacing: 1 }}>Shift</label>
+              <input value={form.shift} onChange={e => setForm({ ...form, shift: e.target.value })} style={{ ...fieldStyle, width: 110 }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, color: EB.gray600, display: "block", marginBottom: 3, textTransform: "uppercase", letterSpacing: 1 }}>Location</label>
+              <Select value={form.location} onChange={v => setForm({ ...form, location: v })} options={locations} />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, color: EB.gray600, display: "block", marginBottom: 3, textTransform: "uppercase", letterSpacing: 1 }}>Industry</label>
+              <Select value={form.industry} onChange={v => setForm({ ...form, industry: v })} options={industries} />
+            </div>
+          </div>
+          {form.bullets.map((b, i) => (
+            <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8, alignItems: "flex-start" }}>
+              <span style={{ color: EB.purple, marginTop: 8, flexShrink: 0 }}>•</span>
+              <textarea value={b} onChange={e => setBullet(i, e.target.value)} rows={2} style={{ flex: 1, border: `1px solid ${EB.gray200}`, borderRadius: 6, padding: "6px 10px", fontSize: 14, fontFamily: "'Trebuchet MS', sans-serif", outline: "none", resize: "vertical" }} />
+              <button onClick={() => removeBullet(i)} style={{ background: "none", border: "none", cursor: "pointer", color: EB.gray400, fontSize: 16, padding: "6px 2px", flexShrink: 0, lineHeight: 1 }}>×</button>
+            </div>
+          ))}
+          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+            <Btn onClick={() => onSave(form)} variant="primary">💾 Save Changes</Btn>
+            <Btn onClick={onCancel} variant="secondary">Cancel</Btn>
+          </div>
+        </div>
+      );
+    }
+
+    // ── EDITOR PAGE ────────────────────────────────────────────────────────
+    function EditorPage({ locations, industries, candidates, session, onRemove, onUpdate }) {
+      const [filterLoc, setFilterLoc] = useState("all");
+      const [filterInd, setFilterInd] = useState("all");
+      const [editing,   setEditing]   = useState(null);
+      const [removing,  setRemoving]  = useState(null);
+
+      const filtered = candidates.filter(c => {
+        if (filterLoc !== "all" && c.location !== filterLoc) return false;
+        if (filterInd !== "all" && c.industry !== filterInd) return false;
+        return true;
+      });
+
+      const handleRemove = async (candidateId) => {
+        setRemoving(candidateId);
+        try {
+          await removeFromHotList(session.user.id, candidateId);
+          onRemove(candidateId);
+        } catch (e) {
+          alert("Failed to remove: " + e.message);
+        } finally {
+          setRemoving(null);
+        }
+      };
+
+      const handleUpdate = async (updated) => {
+        try {
+          await updateCandidateInDB(updated.candidateId, updated);
+          onUpdate(updated);
+          setEditing(null);
+        } catch (e) {
+          alert("Failed to save: " + e.message);
+        }
+      };
+
+      return (
+        <div style={{ maxWidth: 900, margin: "0 auto" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 10 }}>
+            <div>
+              <h2 style={{ fontFamily: "'Trebuchet MS', sans-serif", color: EB.purple, margin: 0 }}>My Hot List</h2>
+              <p style={{ color: EB.gray600, fontSize: 14, marginTop: 4 }}>{filtered.length} candidate{filtered.length !== 1 ? "s" : ""}</p>
+            </div>
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+              <Select value={filterLoc} onChange={setFilterLoc} options={[{ id: "all", label: "All Locations" }, ...locations]} />
+              <Select value={filterInd} onChange={setFilterInd} options={[{ id: "all", label: "All Industries" }, ...industries]} />
+            </div>
+          </div>
+
+          {filtered.length === 0 && (
+            <div style={{ textAlign: "center", padding: "60px 0", color: EB.gray400, fontSize: 15 }}>
+              No candidates in your hot list. Add some from the "Add Candidate" tab.
+            </div>
+          )}
+
+          {filtered.map(c =>
+            editing?.id === c.id
+              ? <EditForm key={c.id} candidate={editing} locations={locations} industries={industries} onSave={handleUpdate} onCancel={() => setEditing(null)} />
+              : <CandidateCard key={c.id} candidate={c} locations={locations} industries={industries} onEdit={() => setEditing({ ...c })} onRemove={() => handleRemove(c.candidateId)} removing={removing === c.candidateId} />
+          )}
+        </div>
+      );
+    }
+
+    // ── SEARCH PAGE ────────────────────────────────────────────────────────
+    function SearchPage({ locations, industries, candidates, session, onAddToList }) {
+      const [keyword,   setKeyword]   = useState("");
+      const [filterLoc, setFilterLoc] = useState("all");
+      const [filterInd, setFilterInd] = useState("all");
+      const [results,   setResults]   = useState(null);
+      const [loading,   setLoading]   = useState(false);
+      const [error,     setError]     = useState("");
+      const [adding,    setAdding]    = useState(null);
+
+      const hotListIds = new Set(candidates.map(c => c.candidateId));
+
+      const handleSearch = async () => {
+        setLoading(true); setError("");
+        try {
+          setResults(await searchCandidates({ keyword: keyword.trim(), location: filterLoc, industry: filterInd }));
+        } catch (e) {
+          setError(e.message || "Search failed.");
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const handleAdd = async (candidate) => {
+        setAdding(candidate.candidateId);
+        try {
+          const { error } = await db.from("hot_list_entries").insert({ user_id: session.user.id, candidate_id: candidate.candidateId });
+          if (error && error.code !== "23505") throw error;
+          onAddToList(candidate);
+        } catch (e) {
+          alert("Failed to add: " + e.message);
+        } finally {
+          setAdding(null);
+        }
+      };
+
+      return (
+        <div style={{ maxWidth: 900, margin: "0 auto" }}>
+          <h2 style={{ fontFamily: "'Trebuchet MS', sans-serif", color: EB.purple, marginBottom: 4 }}>Search Candidates</h2>
+          <p style={{ color: EB.gray600, marginBottom: 24, fontSize: 14 }}>Search the shared candidate database by ID, role, location, or keyword. Results include all candidates added by your team.</p>
+
+          <div style={{ background: EB.white, borderRadius: 12, border: `1px solid ${EB.gray200}`, padding: 24, marginBottom: 24 }}>
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
+              <div style={{ flex: 1, minWidth: 220 }}>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: EB.gray600, marginBottom: 4, textTransform: "uppercase", letterSpacing: 1 }}>Keyword / Candidate ID / Role</label>
+                <input
+                  value={keyword}
+                  onChange={e => setKeyword(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && handleSearch()}
+                  placeholder="e.g. 12345, CNC Machinist, forklift…"
+                  style={{ width: "100%", border: `2px solid ${EB.gray200}`, borderRadius: 8, padding: "8px 12px", fontFamily: "'Trebuchet MS', sans-serif", fontSize: 14, color: EB.gray800, outline: "none", boxSizing: "border-box" }}
+                />
+              </div>
+              <div>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: EB.gray600, marginBottom: 4, textTransform: "uppercase", letterSpacing: 1 }}>Location</label>
+                <Select value={filterLoc} onChange={setFilterLoc} options={[{ id: "all", label: "All Locations" }, ...locations]} style={{ minWidth: 160 }} />
+              </div>
+              <div>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: EB.gray600, marginBottom: 4, textTransform: "uppercase", letterSpacing: 1 }}>Industry</label>
+                <Select value={filterInd} onChange={setFilterInd} options={[{ id: "all", label: "All Industries" }, ...industries]} style={{ minWidth: 140 }} />
+              </div>
+            </div>
+            <Btn onClick={handleSearch} disabled={loading}>
+              {loading ? "⏳ Searching…" : "🔍 Search"}
+            </Btn>
+          </div>
+
+          {error && <div style={{ background: "#FEE2E2", color: "#DC2626", borderRadius: 8, padding: 12, marginBottom: 16, fontSize: 14 }}>⚠️ {error}</div>}
+
+          {results === null && !loading && (
+            <div style={{ textAlign: "center", padding: "50px 0", color: EB.gray400, fontSize: 15 }}>
+              Use the filters above to search the shared candidate database.
+            </div>
+          )}
+
+          {results !== null && results.length === 0 && (
+            <div style={{ textAlign: "center", padding: "50px 0", color: EB.gray400, fontSize: 15 }}>
+              No candidates found. Try a different keyword or clear the filters.
+            </div>
+          )}
+
+          {results !== null && results.length > 0 && (
+            <div style={{ color: EB.gray600, fontSize: 13, marginBottom: 14 }}>{results.length} result{results.length !== 1 ? "s" : ""}</div>
+          )}
+
+          {results && results.map(c => {
+            const inList = hotListIds.has(c.candidateId);
+            return (
+              <CandidateCard
+                key={c.candidateId}
+                candidate={c}
+                locations={locations}
+                industries={industries}
+                extraActions={
+                  inList
+                    ? <span style={{ background: "#D1FAE5", color: "#065F46", borderRadius: 8, padding: "6px 14px", fontSize: 12, fontWeight: 700, display: "inline-flex", alignItems: "center" }}>✓ In My List</span>
+                    : <Btn onClick={() => handleAdd(c)} variant="success" disabled={adding === c.candidateId}>{adding === c.candidateId ? "Adding…" : "+ Add to My List"}</Btn>
+                }
+              />
+            );
+          })}
+        </div>
+      );
+    }
+
+    // ── EXPORT PAGE ────────────────────────────────────────────────────────
+    function ExportPage({ locations, industries, candidates }) {
+      const [filterLoc, setFilterLoc] = useState(locations[0]?.id || "");
+      const [filterInd, setFilterInd] = useState("all");
+
+      const filtered = candidates.filter(c => {
+        if (c.location !== filterLoc) return false;
+        if (filterInd !== "all" && c.industry !== filterInd) return false;
+        return true;
+      });
+      const locLabel = locations.find(l => l.id === filterLoc)?.label || "";
+
+      const handlePrint = () => {
+        const w = window.open("", "_blank");
+        w.document.write(buildPrintHTML(filtered, locLabel));
+        w.document.close();
+        w.focus();
+        setTimeout(() => w.print(), 500);
+      };
+
+      return (
+        <div style={{ maxWidth: 900, margin: "0 auto" }}>
+          <h2 style={{ fontFamily: "'Trebuchet MS', sans-serif", color: EB.purple, marginBottom: 4 }}>Export Hot List</h2>
+          <p style={{ color: EB.gray600, fontSize: 14, marginBottom: 24 }}>Select a location and industry, preview your hot list, then export to PDF.</p>
+
+          <div style={{ display: "flex", gap: 14, marginBottom: 24, flexWrap: "wrap", alignItems: "flex-end" }}>
+            <div>
+              <label style={{ fontSize: 12, color: EB.gray600, display: "block", marginBottom: 4, textTransform: "uppercase", letterSpacing: 1, fontWeight: 700 }}>Location</label>
+              <Select value={filterLoc} onChange={setFilterLoc} options={locations} style={{ minWidth: 180 }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 12, color: EB.gray600, display: "block", marginBottom: 4, textTransform: "uppercase", letterSpacing: 1, fontWeight: 700 }}>Industry</label>
+              <Select value={filterInd} onChange={setFilterInd} options={[{ id: "all", label: "All Industries" }, ...industries]} style={{ minWidth: 160 }} />
+            </div>
+            <Btn onClick={handlePrint} disabled={filtered.length === 0}>📄 Export to PDF</Btn>
+          </div>
+
+          <div style={{ background: EB.white, border: `1px solid ${EB.gray200}`, borderRadius: 12, padding: 40, boxShadow: "0 4px 24px rgba(0,0,0,0.06)", maxWidth: 700, margin: "0 auto" }}>
+            <div style={{ textAlign: "center", marginBottom: 28 }}>
+              <div style={{ marginBottom: 16, display: "flex", justifyContent: "center" }}>
+                <img src="employbridge_logo.png" alt="Employbridge" style={{ height: 72, width: "auto" }} />
+              </div>
+              <p style={{ color: EB.purple, fontSize: 13, margin: 0, lineHeight: 1.6, fontFamily: "'Trebuchet MS', sans-serif" }}>
+                Local {locLabel} talent interested in new opportunities. We're happy to make introductions and schedule conversations if you're interested. We also have additional candidates available, so if you don't see the skill set you're looking for, let's connect and discuss your openings and how we can partner.
+              </p>
+            </div>
+
+            {filtered.length === 0 && <p style={{ textAlign: "center", color: EB.gray400, padding: "30px 0" }}>No candidates for this selection.</p>}
+
+            {filtered.map((c, i) => (
+              <div key={c.id} style={{ marginBottom: i < filtered.length - 1 ? 28 : 0 }}>
+                <h3 style={{ fontFamily: "'Trebuchet MS', sans-serif", color: EB.purple, fontSize: 16, borderBottom: `2px solid ${EB.gray100}`, paddingBottom: 6, marginBottom: 10 }}>
+                  {c.title}{c.candidateId && ` – #${c.candidateId}`}
+                </h3>
+                <ul style={{ margin: 0, paddingLeft: 20 }}>
+                  {c.bullets.map((b, j) => <li key={j} style={{ fontSize: 13.5, color: "#1a1a2e", marginBottom: 5, lineHeight: 1.5, fontFamily: "'Trebuchet MS', sans-serif" }}>{b}</li>)}
+                  {(c.payRate || c.shift) && (
+                    <li style={{ fontSize: 13.5, color: "#1a1a2e", marginBottom: 5, lineHeight: 1.5, fontFamily: "'Trebuchet MS', sans-serif" }}>
+                      {[c.shift && `Available for ${c.shift}`, c.payRate && `seeking ${c.payRate}`].filter(Boolean).join(", ")}.
+                    </li>
+                  )}
+                </ul>
+              </div>
+            ))}
+
+            <div style={{ marginTop: 32, borderTop: `1px solid ${EB.gray200}`, paddingTop: 12 }}>
+              <span style={{ fontFamily: "'Trebuchet MS', sans-serif", fontSize: 11, color: EB.gray400 }}>Presented by Employbridge Staffing</span>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function buildPrintHTML(candidates, locLabel) {
+      const rows = candidates.map(c => `
+        <div class="candidate">
+          <h3>${c.title}${c.candidateId ? ` – #${c.candidateId}` : ""}</h3>
+          <ul>
+            ${c.bullets.map(b => `<li>${b}</li>`).join("")}
+            ${c.payRate || c.shift ? `<li>${[c.shift && `Available for ${c.shift}`, c.payRate && `seeking ${c.payRate}`].filter(Boolean).join(", ")}.</li>` : ""}
+          </ul>
+        </div>`).join("");
+
+      return `<!DOCTYPE html>
+<html><head>
+  <meta charset="UTF-8">
+  <title>Employbridge Hot List – ${locLabel}</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:'Trebuchet MS',Arial,sans-serif; padding:40px; max-width:750px; margin:0 auto; }
+    .header { text-align:center; margin-bottom:28px; }
+    .intro { color:#4B2E83; font-size:13px; line-height:1.6; text-align:center; margin-top:10px; }
+    .candidate { margin-bottom:26px; }
+    .candidate h3 { color:#4B2E83; font-size:15px; font-weight:bold; border-bottom:2px solid #F0EEF8; padding-bottom:5px; margin-bottom:8px; }
+    ul { padding-left:20px; }
+    li { font-size:13px; color:#1a1a2e; margin-bottom:4px; line-height:1.5; }
+    .footer { margin-top:30px; border-top:1px solid #DDD9EE; padding-top:10px; font-size:11px; color:#9B93C0; }
+    @media print { body { padding:20px; } }
+  </style>
+</head><body>
+  <div class="header">
+    <img src="employbridge_logo.png" alt="Employbridge" style="height:72px;width:auto;display:block;margin:0 auto" />
+    <p class="intro">Local ${locLabel} talent interested in new opportunities. We're happy to make introductions and schedule conversations if you're interested. We also have additional candidates available, so if you don't see the skill set you're looking for, let's connect and discuss your openings and how we can partner.</p>
+  </div>
+  ${rows}
+  <div class="footer">Presented by Employbridge Staffing</div>
+</body></html>`;
+    }
+
+    // ── SETTINGS PAGE ──────────────────────────────────────────────────────
+    function SettingsPage({ locations, setLocations, industries, setIndustries, session, onSignOut }) {
+      const [newLoc, setNewLoc] = useState("");
+      const [newInd, setNewInd] = useState("");
+
+      const addLocation = () => {
+        if (!newLoc.trim()) return;
+        const updated = [...locations, { id: newLoc.toLowerCase().replace(/\s+/g, "-"), label: newLoc.trim() }];
+        setLocations(updated); save("eb_locations", updated); setNewLoc("");
+      };
+      const removeLocation = (id) => {
+        const updated = locations.filter(l => l.id !== id);
+        setLocations(updated); save("eb_locations", updated);
+      };
+      const addIndustry = () => {
+        if (!newInd.trim()) return;
+        const updated = [...industries, { id: newInd.toLowerCase().replace(/\s+/g, "-"), label: newInd.trim() }];
+        setIndustries(updated); save("eb_industries", updated); setNewInd("");
+      };
+      const removeIndustry = (id) => {
+        if (id === "general") return;
+        const updated = industries.filter(i => i.id !== id);
+        setIndustries(updated); save("eb_industries", updated);
+      };
+
+      const panelStyle = { background: EB.white, borderRadius: 12, border: `1px solid ${EB.gray200}`, padding: 24, marginBottom: 24 };
+      const rowStyle   = { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: `1px solid ${EB.gray100}` };
+      const addRowStyle = { display: "flex", gap: 10, marginTop: 14 };
+      const inputStyle = { flex: 1, border: `2px solid ${EB.gray200}`, borderRadius: 8, padding: "8px 12px", fontFamily: "'Trebuchet MS', sans-serif", fontSize: 14, outline: "none" };
+
+      return (
+        <div style={{ maxWidth: 700, margin: "0 auto" }}>
+          <h2 style={{ fontFamily: "'Trebuchet MS', sans-serif", color: EB.purple, marginBottom: 4 }}>Settings</h2>
+          <p style={{ color: EB.gray600, fontSize: 14, marginBottom: 28 }}>Manage your account, markets, and industries.</p>
+
+          {/* Account */}
+          <div style={panelStyle}>
+            <h3 style={{ fontFamily: "'Trebuchet MS', sans-serif", color: EB.purple, marginBottom: 14, fontSize: 16 }}>Account</h3>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <div style={{ fontSize: 14, color: EB.gray800, fontWeight: 700 }}>{session.user.email}</div>
+                <div style={{ fontSize: 12, color: EB.gray600, marginTop: 2 }}>Signed in</div>
+              </div>
+              <Btn onClick={onSignOut} variant="danger">Sign Out</Btn>
+            </div>
+          </div>
+
+          {/* Locations */}
+          <div style={panelStyle}>
+            <h3 style={{ fontFamily: "'Trebuchet MS', sans-serif", color: EB.purple, marginBottom: 16, fontSize: 16 }}>Markets / Locations</h3>
+            {locations.map(l => (
+              <div key={l.id} style={rowStyle}>
+                <span style={{ fontFamily: "'Trebuchet MS', sans-serif", color: EB.gray800 }}>{l.label}</span>
+                <Btn onClick={() => removeLocation(l.id)} variant="danger" style={{ padding: "4px 10px", fontSize: 12 }}>Remove</Btn>
+              </div>
+            ))}
+            <div style={addRowStyle}>
+              <input value={newLoc} onChange={e => setNewLoc(e.target.value)} onKeyDown={e => e.key === "Enter" && addLocation()} placeholder="New location name…" style={inputStyle} />
+              <Btn onClick={addLocation} variant="primary">+ Add</Btn>
+            </div>
+          </div>
+
+          {/* Industries */}
+          <div style={panelStyle}>
+            <h3 style={{ fontFamily: "'Trebuchet MS', sans-serif", color: EB.purple, marginBottom: 8, fontSize: 16 }}>Industries</h3>
+            <p style={{ color: EB.gray600, fontSize: 13, marginBottom: 14 }}>Adding industries enables industry-based filtering on hot lists.</p>
+            {industries.map(ind => (
+              <div key={ind.id} style={rowStyle}>
+                <span style={{ fontFamily: "'Trebuchet MS', sans-serif", color: EB.gray800 }}>{ind.label}</span>
+                {ind.id !== "general"
+                  ? <Btn onClick={() => removeIndustry(ind.id)} variant="danger" style={{ padding: "4px 10px", fontSize: 12 }}>Remove</Btn>
+                  : <span style={{ fontSize: 12, color: EB.gray400 }}>Default</span>}
+              </div>
+            ))}
+            <div style={addRowStyle}>
+              <input value={newInd} onChange={e => setNewInd(e.target.value)} onKeyDown={e => e.key === "Enter" && addIndustry()} placeholder="New industry name…" style={inputStyle} />
+              <Btn onClick={addIndustry} variant="primary">+ Add</Btn>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ── APP ROOT ────────────────────────────────────────────────────────────
+    function App() {
+      const [session,     setSession]     = useState(null);
+      const [authLoading, setAuthLoading] = useState(true);
+      const [tab,         setTab]         = useState("add");
+      const [locations,   setLocations]   = useState(() => load("eb_locations",  DEFAULT_LOCATIONS));
+      const [industries,  setIndustries]  = useState(() => load("eb_industries", DEFAULT_INDUSTRIES));
+      const [candidates,  setCandidates]  = useState([]);
+      const [listLoading, setListLoading] = useState(false);
+
+      // Auth listener
+      useEffect(() => {
+        db.auth.getSession().then(({ data: { session } }) => {
+          setSession(session);
+          setAuthLoading(false);
+        });
+        const { data: { subscription } } = db.auth.onAuthStateChange((_event, session) => {
+          setSession(session);
+          if (!session) setCandidates([]);
+        });
+        return () => subscription.unsubscribe();
+      }, []);
+
+      // Load hot list when signed in
+      useEffect(() => {
+        if (!session) return;
+        setListLoading(true);
+        fetchHotList(session.user.id)
+          .then(setCandidates)
+          .catch(e => console.error("Failed to load hot list:", e))
+          .finally(() => setListLoading(false));
+      }, [session?.user?.id]);
+
+      const handleAdd = useCallback((cd) => {
+        setCandidates(prev => {
+          const exists = prev.some(c => c.candidateId === cd.candidateId);
+          if (exists) return prev.map(c => c.candidateId === cd.candidateId ? { ...c, ...cd, id: cd.candidateId } : c);
+          return [{ ...cd, id: cd.candidateId, addedAt: new Date().toISOString() }, ...prev];
+        });
+      }, []);
+
+      const handleRemove = useCallback((candidateId) => {
+        setCandidates(prev => prev.filter(c => c.candidateId !== candidateId));
+      }, []);
+
+      const handleUpdate = useCallback((updated) => {
+        setCandidates(prev => prev.map(c => c.candidateId === updated.candidateId ? updated : c));
+      }, []);
+
+      const handleSignOut = () => db.auth.signOut();
+
+      if (authLoading) {
+        return (
+          <div style={{ minHeight: "100vh", background: EB.gray50, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <span style={{ color: EB.purple, fontFamily: "'Trebuchet MS', sans-serif", fontSize: 15 }}>Loading…</span>
+          </div>
+        );
+      }
+
+      if (!session) return <AuthPage />;
+
+      const tabs = [
+        { id: "add",      label: "Add Candidate", icon: "➕" },
+        { id: "editor",   label: "My Hot List",   icon: "⭐" },
+        { id: "search",   label: "Search",         icon: "🔍" },
+        { id: "export",   label: "Export",          icon: "📄" },
+        { id: "settings", label: "Settings",        icon: "⚙️" },
+      ];
+
+      return (
+        <div style={{ minHeight: "100vh", background: EB.gray50, fontFamily: "'Trebuchet MS', sans-serif" }}>
+          <div style={{ background: `linear-gradient(135deg, ${EB.purpleDark} 0%, ${EB.purple} 60%, ${EB.purpleLight} 100%)`, paddingTop: 16, paddingLeft: 24, paddingRight: 24, boxShadow: "0 2px 16px rgba(75,46,131,0.25)" }}>
+            <div style={{ maxWidth: 960, margin: "0 auto" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                <Logo size={24} />
+                <span style={{ color: "rgba(255,255,255,0.7)", fontSize: 13 }}>{session.user.email}</span>
+              </div>
+              <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                {tabs.map(t => <NavTab key={t.id} label={t.label} active={tab === t.id} onClick={() => setTab(t.id)} icon={t.icon} />)}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ maxWidth: 960, margin: "0 auto", padding: "32px 24px" }}>
+            {listLoading ? (
+              <div style={{ textAlign: "center", padding: "40px 0", color: EB.purple, fontSize: 14 }}>Loading your hot list…</div>
+            ) : (
+              <>
+                {tab === "add"      && <AddCandidatePage locations={locations} industries={industries} session={session} onAdd={handleAdd} />}
+                {tab === "editor"   && <EditorPage locations={locations} industries={industries} candidates={candidates} session={session} onRemove={handleRemove} onUpdate={handleUpdate} />}
+                {tab === "search"   && <SearchPage locations={locations} industries={industries} candidates={candidates} session={session} onAddToList={handleAdd} />}
+                {tab === "export"   && <ExportPage locations={locations} industries={industries} candidates={candidates} />}
+                {tab === "settings" && <SettingsPage locations={locations} setLocations={setLocations} industries={industries} setIndustries={setIndustries} session={session} onSignOut={handleSignOut} />}
+              </>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(<App />);
+  </script>
+</body>
+</html>

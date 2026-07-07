@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Templates &amp; Settings</title>
+<link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+<link rel="stylesheet" href="../../shared/css/auth-overlay.css">
+<link rel="stylesheet" href="../../shared/css/dash-link.css">
+<div id="platformAuthOverlay" class="platform-auth-overlay">
+  <div class="platform-auth-box">
+    <h2>30080 Utility</h2>
+    <p id="platformAuthMsg">Checking sign-in&hellip;</p>
+    <form id="platformAuthForm" style="display:none;">
+      <input type="email" id="platformAuthEmail" placeholder="Work email" required autocomplete="username">
+      <input type="password" id="platformAuthPassword" placeholder="Password" required autocomplete="current-password">
+      <button type="submit">Sign in</button>
+    </form>
+  </div>
+</div>
+<script src="../../shared/js/dash-link.js"></script>
+
+<header class="app-header">
+  <div class="app-header-inner">
+    <a class="brand" href="index.html">
+      <span class="brand-mark">NE</span>
+      Email Generator
+    </a>
+    <nav class="main-nav">
+      <a href="index.html">Generate Email</a>
+      <a href="templates.html">Templates &amp; Settings</a>
+    </nav>
+    <div class="cloud-status" id="cloudStatus">
+      <span id="cloudStatusText" class="text-muted">Local only (Firebase not configured)</span>
+      <button class="btn secondary small" id="cloudSignInBtn">Sign in with Google</button>
+      <button class="btn secondary small" id="cloudSignOutBtn" style="display:none;">Sign out</button>
+    </div>
+  </div>
+</header>
+
+<main class="container">
+  <h1 class="page-title">Templates &amp; Settings</h1>
+  <p class="page-subtitle">Build the base templates used on the Generate Email page, and set your default sender info.</p>
+
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="templatesTab">Templates</button>
+    <button class="tab-btn" data-tab="settingsTab">Sender Settings</button>
+  </div>
+
+  <section id="templatesTab">
+    <div class="grid" style="grid-template-columns: 320px minmax(0,1fr);">
+      <div>
+        <div class="card">
+          <h2>Templates</h2>
+          <div class="btn-row" style="margin-top:0;margin-bottom:12px;">
+            <button class="btn" id="newTemplateBtn">+ New Template</button>
+          </div>
+          <div id="templateList" class="template-list"></div>
+        </div>
+        <div class="card">
+          <h2>Backup</h2>
+          <p class="hint text-muted" style="margin-top:0;">Export your templates to a JSON file, or import a previously exported file. This also lets you save a starter set into <code>data/templates.json</code> in the repo.</p>
+          <div class="btn-row">
+            <button class="btn secondary" id="exportBtn">Export JSON</button>
+            <button class="btn secondary" id="importBtn">Import JSON</button>
+            <input type="file" id="importFile" accept="application/json" style="display:none;">
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="card" id="editorEmpty">
+          <div class="empty-state">Select a template to edit, or create a new one.</div>
+        </div>
+
+        <form class="card" id="editorForm" style="display:none;">
+          <h2 id="editorTitle">New Template</h2>
+
+          <div class="row-2">
+            <div class="field">
+              <label for="tplType">Email Type</label>
+              <input type="text" id="tplType" list="typeOptions" placeholder="e.g. New Start" required>
+              <datalist id="typeOptions"></datalist>
+            </div>
+            <div class="field">
+              <label for="tplClient">Client</label>
+              <input type="text" id="tplClient" list="clientOptions" placeholder="e.g. Crescent (or None)" required>
+              <datalist id="clientOptions"></datalist>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>Shifts <span class="text-muted">(leave empty to hide the shift selector for this template)</span></label>
+            <div class="inline-form">
+              <input type="text" id="shiftInput" placeholder="e.g. 1st Shift (6am–2pm)">
+              <button type="button" class="btn secondary small" id="addShiftBtn">Add</button>
+            </div>
+            <div class="chips" id="shiftChips"></div>
+          </div>
+
+          <div class="row-2">
+            <div class="field">
+              <label><input type="checkbox" id="usesDate" checked> Uses a date field</label>
+            </div>
+            <div class="field">
+              <label for="dateLabelInput">Date Field Label</label>
+              <input type="text" id="dateLabelInput" placeholder="e.g. Start Date">
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="tplSubject">Subject Line</label>
+            <input type="text" id="tplSubject" placeholder="e.g. Welcome to {{client}} – Start Date {{date}}">
+          </div>
+
+          <div class="field">
+            <label>Body</label>
+            <div class="toolbar">
+              <button type="button" data-cmd="bold"><b>B</b></button>
+              <button type="button" data-cmd="italic"><i>I</i></button>
+              <button type="button" data-cmd="underline"><u>U</u></button>
+              <button type="button" data-cmd="insertUnorderedList">• List</button>
+              <button type="button" data-cmd="insertOrderedList">1. List</button>
+              <button type="button" id="insertLinkBtn">Link</button>
+              <button type="button" id="insertImageBtn">📷 Image</button>
+              <input type="file" id="imageFileInput" accept="image/*" style="display:none;">
+              <select id="tokenInsertSelect">
+                <option value="">Insert field…</option>
+              </select>
+            </div>
+            <div class="editable-body" id="bodyEditor" contenteditable="true"></div>
+            <p class="hint">Type <span class="token-chip">{{fieldName}}</span> anywhere to create a custom field automatically, or use "Insert field" above.</p>
+          </div>
+
+          <div class="field" id="detectedFieldsWrap" style="display:none;">
+            <label>Custom Field Settings</label>
+            <div id="detectedFields"></div>
+          </div>
+
+          <hr class="sep">
+
+          <div class="btn-row">
+            <button type="submit" class="btn" id="saveTemplateBtn">Save Template</button>
+            <button type="button" class="btn secondary" id="duplicateBtn">Duplicate</button>
+            <button type="button" class="btn secondary" id="previewBtn">Preview</button>
+            <button type="button" class="btn danger" id="deleteBtn">Delete</button>
+          </div>
+        </form>
+
+        <div class="card" id="previewCard" style="display:none;">
+          <h2>Preview (sample data)</h2>
+          <div class="email-preview-wrap">
+            <div class="email-preview-meta">
+              <div><b>Subject:</b> <span id="previewSubjectOut"></span></div>
+            </div>
+            <div class="email-preview-body" id="previewBodyOut"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="settingsTab" style="display:none;">
+    <div class="card" style="max-width:560px;">
+      <h2>Default Sender Info</h2>
+      <p class="hint text-muted" style="margin-top:0;">Used to fill <span class="token-chip">{{senderName}}</span>, <span class="token-chip">{{senderTitle}}</span>, <span class="token-chip">{{senderPhone}}</span>, <span class="token-chip">{{senderEmail}}</span> and <span class="token-chip">{{senderCompany}}</span> tokens in your templates.</p>
+      <div class="field">
+        <label for="senderName">Your Name</label>
+        <input type="text" id="senderName">
+      </div>
+      <div class="field">
+        <label for="senderTitle">Title</label>
+        <input type="text" id="senderTitle">
+      </div>
+      <div class="field">
+        <label for="senderCompany">Company</label>
+        <input type="text" id="senderCompany">
+      </div>
+      <div class="field">
+        <label for="senderPhone">Phone</label>
+        <input type="text" id="senderPhone">
+      </div>
+      <div class="field">
+        <label for="senderEmail">Email</label>
+        <input type="email" id="senderEmail">
+      </div>
+      <div class="btn-row">
+        <button class="btn" id="saveSettingsBtn">Save Settings</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="app-footer">Runs entirely in your browser — no data leaves your device.</footer>
+
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+<script src="../../shared/js/firebase-config.js"></script>
+<script src="../../shared/js/auth-guard.js"></script>
+<script src="assets/js/firebase-config.js"></script>
+<script src="assets/js/ui.js"></script>
+<script src="assets/js/cloud.js"></script>
+<script src="assets/js/storage.js"></script>
+<script src="assets/js/render.js"></script>
+<script src="assets/js/eml.js"></script>
+<script src="assets/js/builder.js"></script>
+</body>
+</html>

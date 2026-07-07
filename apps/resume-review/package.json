@@ -1,0 +1,13 @@
+{
+  "name": "resume-review-proxy",
+  "version": "1.0.0",
+  "description": "Azure Function proxy for Resume Review Tool",
+  "main": "index.js",
+  "scripts": {
+    "start": "func start"
+  },
+  "dependencies": {},
+  "engines": {
+    "node": ">=18"
+  }
+}

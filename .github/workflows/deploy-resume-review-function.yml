@@ -1,0 +1,33 @@
+name: Deploy Resume Review Azure Function
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/resume-review/**"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy to Azure Function App
+        uses: Azure/functions-action@v1
+        with:
+          app-name: resume-review-fn-bydkf6hrgvaadwcj
+          package: apps/resume-review
+          publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
+
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Configure CORS to allow GitHub Pages
+        run: |
+          az functionapp cors add \
+            --name resume-review-fn-bydkf6hrgvaadwcj \
+            --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} \
+            --allowed-origins "https://thinkhale.github.io"

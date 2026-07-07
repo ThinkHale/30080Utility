@@ -1,0 +1,22 @@
+/* Floating "back to dashboard" link — safe to include on every mounted app,
+   including ones (like Hot-List) that have their own auth and don't load
+   auth-overlay.css. */
+
+.platform-dash-link {
+  position: fixed;
+  bottom: 16px;
+  left: 16px;
+  z-index: 9998;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: #1b1e29;
+  color: #f1f3f8 !important;
+  font: 600 0.8rem -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  text-decoration: none;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  opacity: 0.85;
+}
+
+.platform-dash-link:hover {
+  opacity: 1;
+}

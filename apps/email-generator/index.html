@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Email Generator</title>
+<link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+<link rel="stylesheet" href="../../shared/css/auth-overlay.css">
+<link rel="stylesheet" href="../../shared/css/dash-link.css">
+<div id="platformAuthOverlay" class="platform-auth-overlay">
+  <div class="platform-auth-box">
+    <h2>30080 Utility</h2>
+    <p id="platformAuthMsg">Checking sign-in&hellip;</p>
+    <form id="platformAuthForm" style="display:none;">
+      <input type="email" id="platformAuthEmail" placeholder="Work email" required autocomplete="username">
+      <input type="password" id="platformAuthPassword" placeholder="Password" required autocomplete="current-password">
+      <button type="submit">Sign in</button>
+    </form>
+  </div>
+</div>
+<script src="../../shared/js/dash-link.js"></script>
+
+<header class="app-header">
+  <div class="app-header-inner">
+    <a class="brand" href="index.html">
+      <span class="brand-mark">NE</span>
+      Email Generator
+    </a>
+    <nav class="main-nav">
+      <a href="index.html">Generate Email</a>
+      <a href="templates.html">Templates &amp; Settings</a>
+    </nav>
+    <div class="cloud-status" id="cloudStatus">
+      <span id="cloudStatusText" class="text-muted">Local only (Firebase not configured)</span>
+      <button class="btn secondary small" id="cloudSignInBtn">Sign in with Google</button>
+      <button class="btn secondary small" id="cloudSignOutBtn" style="display:none;">Sign out</button>
+    </div>
+  </div>
+</header>
+
+<main class="container">
+  <h1 class="page-title">Generate an Email</h1>
+  <p class="page-subtitle">Fill out the form to build a consistent, ready-to-send email.</p>
+
+  <div id="noTemplatesWarning" class="helper-box" style="display:none;">
+    No templates found yet. Head to <a href="templates.html">Templates &amp; Settings</a> to create your first one.
+  </div>
+
+  <div class="grid">
+    <div>
+      <div class="card">
+        <h2>Details</h2>
+        <div class="field">
+          <label for="emailType">Email Type</label>
+          <select id="emailType"></select>
+        </div>
+        <div class="field">
+          <label for="client">Client</label>
+          <select id="client"></select>
+        </div>
+        <div class="field" id="shiftField" style="display:none;">
+          <label for="shift">Shift</label>
+          <select id="shift"></select>
+        </div>
+        <div class="field" id="dateField" style="display:none;">
+          <label for="dateInput" id="dateLabel">Date</label>
+          <input type="date" id="dateInput">
+        </div>
+        <div class="field">
+          <label for="recipientEmail">Recipient Email(s) <span class="text-muted">(optional)</span></label>
+          <input type="text" id="recipientEmail" placeholder="name@example.com, name2@example.com">
+        </div>
+      </div>
+
+      <div class="card" id="customFieldsCard" style="display:none;">
+        <h2>Additional Fields</h2>
+        <div id="customFieldsContainer"></div>
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <h2>Preview</h2>
+        <div id="previewEmpty" class="empty-state">Select an email type and client to see a preview.</div>
+        <div id="previewWrap" style="display:none;">
+          <div class="email-preview-wrap">
+            <div class="email-preview-meta">
+              <div><b>To:</b> <span id="previewTo">—</span></div>
+              <div><b>Subject:</b> <span id="previewSubject"></span></div>
+            </div>
+            <div class="email-preview-body" id="previewBody"></div>
+          </div>
+          <div class="btn-row">
+            <button class="btn" id="copyRichBtn">Copy Rich Email</button>
+            <button class="btn secondary" id="copyPlainBtn">Copy Plain Text</button>
+            <button class="btn secondary" id="downloadEmlBtn">Download .eml</button>
+            <button class="btn secondary" id="resetBtn">Reset</button>
+          </div>
+          <p class="hint text-muted" style="margin-top:10px;">
+            <b>Copy Rich Email</b> copies formatted HTML (with images) — paste directly into a new Outlook message.
+            <b>Download .eml</b> saves a file you can open in Outlook; use Forward or Edit Message to make it editable.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer class="app-footer">Runs entirely in your browser — no data leaves your device.</footer>
+
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+<script src="../../shared/js/firebase-config.js"></script>
+<script src="../../shared/js/auth-guard.js"></script>
+<script src="assets/js/firebase-config.js"></script>
+<script src="assets/js/ui.js"></script>
+<script src="assets/js/cloud.js"></script>
+<script src="assets/js/storage.js"></script>
+<script src="assets/js/render.js"></script>
+<script src="assets/js/eml.js"></script>
+<script src="assets/js/generator.js"></script>
+</body>
+</html>

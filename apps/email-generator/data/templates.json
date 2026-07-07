@@ -1,0 +1,97 @@
+[
+  {
+    "id": "seed_new_start_crescent",
+    "type": "New Start",
+    "client": "Crescent",
+    "shifts": ["1st Shift", "2nd Shift", "3rd Shift"],
+    "usesDate": true,
+    "dateLabel": "Start Date",
+    "subject": "Welcome to Crescent – Your Start Date is {{date}}",
+    "fieldMeta": {
+      "employeeName": { "label": "Employee Name", "type": "text" },
+      "positionTitle": { "label": "Position Title", "type": "text" },
+      "reportTime": { "label": "Report Time", "type": "time" },
+      "facilityAddress": { "label": "Facility Address", "type": "text" }
+    },
+    "body": "<p>Hi {{employeeName}},</p><p>Congratulations! This confirms your assignment with <b>{{client}}</b> as a <b>{{positionTitle}}</b>.</p><p><b>Start Date:</b> {{date}}<br><b>Shift:</b> {{shift}}<br><b>Report Time:</b> {{reportTime}}<br><b>Location:</b> {{facilityAddress}}</p><p>Please bring a valid photo ID and arrive 15 minutes early to complete any remaining paperwork. See the facility photo and map below for reference.</p><p>If you have any questions before your start date, feel free to reach out.</p><p>Welcome aboard!</p><p>{{senderName}}<br>{{senderTitle}}<br>{{senderCompany}}<br>{{senderPhone}}<br>{{senderEmail}}</p>"
+  },
+  {
+    "id": "seed_new_start_geodis_hg",
+    "type": "New Start",
+    "client": "GEODIS H&G",
+    "shifts": ["1st Shift", "2nd Shift", "3rd Shift", "Weekend"],
+    "usesDate": true,
+    "dateLabel": "Start Date",
+    "subject": "GEODIS H&G – New Assignment Start Date {{date}}",
+    "fieldMeta": {
+      "employeeName": { "label": "Employee Name", "type": "text" },
+      "positionTitle": { "label": "Position Title", "type": "text" },
+      "reportTime": { "label": "Report Time", "type": "time" },
+      "facilityAddress": { "label": "Facility Address", "type": "text" },
+      "parkingInstructions": { "label": "Parking Instructions", "type": "textarea" }
+    },
+    "body": "<p>Hi {{employeeName}},</p><p>You're all set to begin your assignment with <b>{{client}}</b> as a <b>{{positionTitle}}</b>.</p><p><b>Start Date:</b> {{date}}<br><b>Shift:</b> {{shift}}<br><b>Report Time:</b> {{reportTime}}<br><b>Location:</b> {{facilityAddress}}</p><p><b>Parking:</b> {{parkingInstructions}}</p><p>A facility photo and map are included below to help you find the entrance.</p><p>{{senderName}}<br>{{senderTitle}}<br>{{senderCompany}}<br>{{senderPhone}}<br>{{senderEmail}}</p>"
+  },
+  {
+    "id": "seed_new_start_geodis_spectrum",
+    "type": "New Start",
+    "client": "GEODIS Spectrum",
+    "shifts": ["1st Shift", "2nd Shift", "3rd Shift"],
+    "usesDate": true,
+    "dateLabel": "Start Date",
+    "subject": "GEODIS Spectrum – New Assignment Start Date {{date}}",
+    "fieldMeta": {
+      "employeeName": { "label": "Employee Name", "type": "text" },
+      "positionTitle": { "label": "Position Title", "type": "text" },
+      "reportTime": { "label": "Report Time", "type": "time" },
+      "facilityAddress": { "label": "Facility Address", "type": "text" }
+    },
+    "body": "<p>Hi {{employeeName}},</p><p>Congratulations on your new assignment with <b>{{client}}</b> as a <b>{{positionTitle}}</b>.</p><p><b>Start Date:</b> {{date}}<br><b>Shift:</b> {{shift}}<br><b>Report Time:</b> {{reportTime}}<br><b>Location:</b> {{facilityAddress}}</p><p>Please arrive a few minutes early with a valid photo ID. Reference the facility photo and map below.</p><p>{{senderName}}<br>{{senderTitle}}<br>{{senderCompany}}<br>{{senderPhone}}<br>{{senderEmail}}</p>"
+  },
+  {
+    "id": "seed_assignment_end",
+    "type": "Assignment End",
+    "client": "None",
+    "shifts": [],
+    "usesDate": true,
+    "dateLabel": "Last Day",
+    "subject": "Assignment End Notice – {{employeeName}} – {{date}}",
+    "fieldMeta": {
+      "employeeName": { "label": "Employee Name", "type": "text" },
+      "reason": { "label": "Reason", "type": "text" }
+    },
+    "body": "<p>Hi {{employeeName}},</p><p>This confirms that your assignment with <b>{{client}}</b> will end on <b>{{date}}</b>.</p><p><b>Reason:</b> {{reason}}</p><p>Please return any badges, equipment, or PPE issued to you on your last day. We appreciate your work during this assignment and will keep you in mind for future opportunities.</p><p>{{senderName}}<br>{{senderTitle}}<br>{{senderCompany}}<br>{{senderPhone}}<br>{{senderEmail}}</p>"
+  },
+  {
+    "id": "seed_reminder",
+    "type": "Reminder",
+    "client": "None",
+    "shifts": [],
+    "usesDate": true,
+    "dateLabel": "Reminder Date",
+    "subject": "Reminder: {{reminderSubject}}",
+    "fieldMeta": {
+      "employeeName": { "label": "Employee Name", "type": "text" },
+      "reminderSubject": { "label": "Reminder About", "type": "text" },
+      "reminderDetails": { "label": "Details", "type": "textarea" }
+    },
+    "body": "<p>Hi {{employeeName}},</p><p>Just a friendly reminder regarding <b>{{reminderSubject}}</b> for {{date}}.</p><p>{{reminderDetails}}</p><p>Let us know if you have any questions.</p><p>{{senderName}}<br>{{senderTitle}}<br>{{senderCompany}}<br>{{senderPhone}}<br>{{senderEmail}}</p>"
+  },
+  {
+    "id": "seed_interview_scheduled",
+    "type": "Interview Scheduled",
+    "client": "None",
+    "shifts": [],
+    "usesDate": true,
+    "dateLabel": "Interview Date",
+    "subject": "Your Interview is Scheduled – {{date}}",
+    "fieldMeta": {
+      "employeeName": { "label": "Candidate Name", "type": "text" },
+      "positionTitle": { "label": "Position Title", "type": "text" },
+      "interviewTime": { "label": "Interview Time", "type": "time" },
+      "interviewer": { "label": "Interviewer", "type": "text" },
+      "facilityAddress": { "label": "Interview Location", "type": "text" }
+    },
+    "body": "<p>Hi {{employeeName}},</p><p>Your interview for the <b>{{positionTitle}}</b> position with <b>{{client}}</b> has been scheduled.</p><p><b>Date:</b> {{date}}<br><b>Time:</b> {{interviewTime}}<br><b>Interviewer:</b> {{interviewer}}<br><b>Location:</b> {{facilityAddress}}</p><p>Please bring a valid photo ID and arrive 10 minutes early. See the map below for directions.</p><p>Looking forward to speaking with you!</p><p>{{senderName}}<br>{{senderTitle}}<br>{{senderCompany}}<br>{{senderPhone}}<br>{{senderEmail}}</p>"
+  }
+]
